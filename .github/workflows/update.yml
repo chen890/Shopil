@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # commit the geocode cache
+  contents: write   # commit the geocode cache, read the il-data release
   pages: write
   id-token: write
 
@@ -36,6 +36,23 @@ jobs:
           cache-dependency-path: pipeline/requirements.txt
 
       - run: pip install -r pipeline/requirements.txt
+
+      - name: Add chains uploaded from Israel
+        # Hazi Hinam (and Carrefour) block servers outside Israel, so a Mac in
+        # Israel uploads their data to the "il-data" release (scripts/il_upload.sh).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/data "$RUNNER_TEMP/il"
+          gh release download il-data -R "${{ github.repository }}" -p '*.tar.gz' -D "$RUNNER_TEMP/il" \
+            || echo "no il-data release yet"
+          for f in "$RUNNER_TEMP"/il/*.tar.gz; do
+            [ -e "$f" ] || continue
+            tar -xzf "$f" -C site/data
+          done
+          # drop data the Mac hasn't refreshed for a week
+          find site/data/parts -name '*.json' -mtime +7 -print -delete 2>/dev/null || true
+          ls site/data/parts 2>/dev/null || true
 
       - name: Fetch and build price data
         env:
