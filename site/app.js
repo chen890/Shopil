@@ -31,7 +31,15 @@ function loadState() {
   s.rlMonthly ??= false;  // Rami Levy cashback condition (>= ₪500 / month)
   return s;
 }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) { /* ignore */ } }
+let pushTimer = null;
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) { /* ignore */ }
+  // live-shared lists: send changes to the other devices
+  if (typeof Sync !== "undefined" && state.lists.some((l) => l.sync)) {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => state.lists.filter((l) => l.sync).forEach((l) => Sync.push(l).catch(() => {})), 300);
+  }
+}
 function uid() { return Math.random().toString(36).slice(2, 9); }
 const state = loadState();
 const activeList = () => state.lists.find((l) => l.id === state.active);
@@ -143,7 +151,7 @@ function setQty(code, q) {
 
 function renderListsBar() {
   $("#listsBar").innerHTML =
-    state.lists.map((l) => `<button class="chip ${l.id === state.active ? "on" : ""}" data-list="${l.id}">${esc(l.name)} <small>(${l.items.length})</small></button>`).join("") +
+    state.lists.map((l) => `<button class="chip ${l.id === state.active ? "on" : ""}" data-list="${l.id}">${l.sync ? "🔗 " : ""}${esc(l.name)} <small>(${l.items.length})</small></button>`).join("") +
     '<button class="chip" data-list="__new">+ רשימה חדשה</button>';
 }
 
@@ -779,7 +787,45 @@ function shareStore(i) {
   text += `\n\n${list.items.map((x) => `• ${x.n}${x.q !== 1 ? ` ×${x.q}` : ""}`).join("\n")}\n\nהרשימה ב־Shopil: ${listLink(list)}`;
   whatsapp(text);
 }
+function watchList(list) {
+  Sync.subscribe(list, (items, name) => {
+    list.items = items;
+    if (name) list.name = name;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) { /* ignore */ }
+    if (list.id === state.active) { renderList(); scheduleCompute(); } else renderListsBar();
+  });
+}
+async function liveShare() {
+  const list = activeList();
+  if (!Sync.enabled()) {
+    openDialog(`<h2>שיתוף חי</h2><p>שיתוף חי מסנכרן את הרשימה בין כמה טלפונים בזמן אמת: מה שמוסיפים או מסמנים ב־✓ בטלפון אחד מופיע מיד בשני.</p>
+      <p class="hint">הסנכרון עוד לא הוגדר באתר הזה. בינתיים אפשר לשתף עותק של הרשימה בוואטסאפ.</p>`);
+    return;
+  }
+  if (!(await Sync.init())) { toast("לא ניתן להתחבר לשרת הסנכרון"); return; }
+  if (!list.sync) {
+    list.sync = Sync.newId();
+    save();
+    await Sync.push(list);
+    watchList(list);
+  }
+  const link = location.origin + location.pathname + "#sync=" + list.sync;
+  whatsapp(`🛒 בואו נעשה קניות ביחד: "${list.name}"\nהרשימה מתעדכנת אצל כולם בזמן אמת:\n${link}`);
+}
+
 function importFromHash() {
+  const sm = location.hash.match(/#sync=([a-z0-9]{20,40})/);
+  if (sm) {
+    let list = state.lists.find((l) => l.sync === sm[1]);
+    if (!list) {
+      list = { id: uid(), name: "רשימה משותפת", items: [], sync: sm[1] };
+      state.lists.push(list);
+      toast("הצטרפתם לרשימה משותפת");
+    }
+    state.active = list.id; save();
+    history.replaceState(null, "", location.pathname);
+    return;
+  }
   const m = location.hash.match(/#l=([\w-]+)/);
   if (!m) return;
   try {
@@ -952,6 +998,7 @@ function bind() {
     save(); lastResult = null; renderList(); scheduleCompute();
   });
   $("#shareListBtn").onclick = shareList;
+  $("#liveShareBtn").onclick = liveShare;
   $("#clearListBtn").onclick = async () => {
     if (!activeList().items.length) { toast("הרשימה כבר ריקה"); return; }
     if (!(await ask(`לנקות את כל המוצרים מ"${activeList().name}"?`, { ok: "ניקוי", danger: true }))) return;
@@ -1043,5 +1090,6 @@ function bind() {
   if (state.loc) $("#locText").textContent = "📍 " + state.loc.label;
   renderList();
   try { await refreshMeta(true); } catch (e) { $("#updated").textContent = "לא ניתן לטעון נתונים"; }
+  state.lists.filter((l) => l.sync).forEach(watchList);
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();

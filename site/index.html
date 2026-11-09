@@ -37,7 +37,8 @@
 
       <button id="findBtn" class="btn primary wide" hidden>💰 מצאו את הסל הכי זול</button>
       <div class="list-actions">
-        <button id="shareListBtn" class="btn">שיתוף הרשימה בוואטסאפ</button>
+        <button id="liveShareBtn" class="btn">🔗 שיתוף חי (מתעדכן אצל כולם)</button>
+        <button id="shareListBtn" class="btn">💬 שליחת עותק בוואטסאפ</button>
         <button id="clearListBtn" class="btn ghost">ניקוי הרשימה</button>
       </div>
     </section>
@@ -109,6 +110,8 @@
   <dialog id="dialog"><div id="dialogBody"></div><form method="dialog"><button class="btn">סגירה</button></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="config.js"></script>
+  <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

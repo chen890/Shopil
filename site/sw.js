@@ -1,7 +1,7 @@
 // App shell: network first, cache fallback (works offline with the last version).
 // Price data is never cached here; the app fetches fresh data each time.
-const CACHE = "shopil-shell-v1";
-const SHELL = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icon.svg"];
+const CACHE = "shopil-shell-v2";
+const SHELL = ["./", "index.html", "style.css", "app.js", "sync.js", "config.js", "manifest.webmanifest", "icon.svg"];
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (e) => {
