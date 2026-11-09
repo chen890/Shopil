@@ -258,3 +258,7 @@ dialog { max-height: 85vh; overflow-y: auto; }
 .card-rules input[type=number] { width: 70px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); padding: 0 6px; margin-inline-end: 4px; }
 .card-rules .rl { justify-content: flex-start; gap: 6px; }
 .progress[hidden] { display: none; }
+
+/* keep "find the cheapest cart" reachable while scrolling the list */
+#findBtn { position: sticky; top: 52px; z-index: 4; box-shadow: 0 0 0 6px var(--bg); }
+#findBtn[hidden] { display: none; }
