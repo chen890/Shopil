@@ -375,13 +375,14 @@ function useGPS() {
 const CARDS = [
   {
     id: "hever", name: "חבר (כרטיס אשראי חבר)",
-    note: "קרפור: הנחה בקופה. רמי לוי: 5% החזר לכרטיס הנטען בקנייה חודשית מעל ₪500 בכרטיס חבר. שופרסל הפסיקה את ההטבה ב־11/2024.",
+    note: "קרפור וחצי חינם (3.5%): הנחה בקופה. רמי לוי: 5% החזר לכרטיס הנטען בקנייה חודשית מעל ₪500 בכרטיס חבר. שופרסל הפסיקה את ההטבה ב־11/2024.",
     rules: [
       { key: "carrefour-city", label: "קרפור סיטי", chain: "carrefour", match: /סיטי|city/i, pct: 6 },
       { key: "carrefour-market", label: "קרפור מרקט", chain: "carrefour", match: /מרקט|market/i, pct: 7 },
       { key: "carrefour-online", label: "קרפור אונליין", chain: "carrefour", online: true, pct: 5 },
       { key: "carrefour-other", label: "קרפור (היפר ואחר)", chain: "carrefour", pct: 0 },
       { key: "ramilevy", label: "רמי לוי (החזר)", chain: "ramilevy", pct: 5, cashback: true },
+      { key: "hazihinam", label: "חצי חינם", chain: "hazihinam", pct: 3.5 },
     ],
   },
   {

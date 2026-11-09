@@ -1,33 +1,35 @@
+/* ===== "Fresh market" theme: cream, leaf green, warm orange ===== */
 :root {
-  --bg: #f6f7f5;
+  --bg: #FBF6EC;
   --card: #ffffff;
-  --text: #1c2321;
-  --muted: #5f6b67;
-  --line: #e2e6e3;
-  --accent: #0f766e;
-  --accent-ink: #ffffff;
-  --accent-soft: #e0f2ef;
-  --deal: #166534;
-  --deal-soft: #e7f6ea;
-  --warn: #92400e;
-  --warn-soft: #fdf2e2;
-  --danger: #b42318;
-  --radius: 12px;
-  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
+  --text: #2C2C2A;
+  --muted: #6F6B62;
+  --line: #E8E0CF;
+  --accent: #3B6D11;
+  --accent-ink: #F4F9EC;
+  --accent-soft: #EAF3DE;
+  --cat: #854F0B;
+  --deal: #633806;
+  --deal-soft: #FAEEDA;
+  --warn: #993C1D;
+  --warn-soft: #FAECE7;
+  --danger: #A32D2D;
+  --radius: 18px;
+  --shadow: 0 1px 2px rgba(84, 60, 20, .06), 0 4px 14px rgba(84, 60, 20, .06);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #121615; --card: #1b2120; --text: #e8ecea; --muted: #9aa6a2; --line: #2c3432;
-    --accent: #2dd4bf; --accent-ink: #062b27; --accent-soft: #123b36;
-    --deal: #86efac; --deal-soft: #133222; --warn: #fbbf24; --warn-soft: #3a2a0c; --danger: #f87171;
+    --bg: #1E1A14; --card: #2A251D; --text: #F1EBDD; --muted: #B4AC9B; --line: #3D362B;
+    --accent: #97C459; --accent-ink: #173404; --accent-soft: #27361A;
+    --cat: #EF9F27; --deal: #FAC775; --deal-soft: #3D2C12; --warn: #F0997B; --warn-soft: #3F2219; --danger: #F09595;
     --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #121615; --card: #1b2120; --text: #e8ecea; --muted: #9aa6a2; --line: #2c3432;
-  --accent: #2dd4bf; --accent-ink: #062b27; --accent-soft: #123b36;
-  --deal: #86efac; --deal-soft: #133222; --warn: #fbbf24; --warn-soft: #3a2a0c; --danger: #f87171;
+  --bg: #1E1A14; --card: #2A251D; --text: #F1EBDD; --muted: #B4AC9B; --line: #3D362B;
+  --accent: #97C459; --accent-ink: #173404; --accent-soft: #27361A;
+  --cat: #EF9F27; --deal: #FAC775; --deal-soft: #3D2C12; --warn: #F0997B; --warn-soft: #3F2219; --danger: #F09595;
   --shadow: none; color-scheme: dark;
 }
 
@@ -35,7 +37,7 @@
 html, body { margin: 0; }
 body {
   background: var(--bg); color: var(--text);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Rubik, Arial, sans-serif;
+  font: 16px/1.55 Rubik, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
   padding-bottom: calc(150px + env(safe-area-inset-bottom));
   overflow-x: hidden;
 }
@@ -262,3 +264,40 @@ dialog { max-height: 85vh; overflow-y: auto; }
 /* keep "find the cheapest cart" reachable while scrolling the list */
 #findBtn { position: sticky; top: 52px; z-index: 4; box-shadow: 0 0 0 6px var(--bg); }
 #findBtn[hidden] { display: none; }
+
+/* ===== fresh market components ===== */
+.brand { color: var(--accent); font-weight: 700; letter-spacing: .2px; }
+.brand small { color: var(--cat); }
+.btn { border-radius: 14px; }
+.btn.primary { box-shadow: 0 2px 0 rgba(0,0,0,.08); }
+.btn.wide { border-radius: 16px; }
+.chip { border-radius: 999px; }
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.search input, select, .location input, .row input { border-radius: 14px; }
+.search input { background: var(--card); box-shadow: var(--shadow); border-color: transparent; }
+.results, .item, .store, .summary, .club { border-radius: var(--radius); }
+.item { border: 0; padding: 12px 14px; }
+.cat h3 { color: var(--cat); font-size: 16px; font-weight: 600; margin: 18px 6px 8px; }
+.cat h3 small { color: var(--muted); }
+.check { border-color: var(--accent); }
+.item.done .check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.qty { border-radius: 999px; background: var(--bg); border-color: transparent; }
+.qty span { color: var(--accent); font-weight: 600; }
+.deal { border-radius: 12px; }
+.deal button { border-radius: 999px; }
+.badge.best { background: var(--accent); color: var(--accent-ink); }
+.badge.saved { background: var(--accent-soft); color: var(--accent); }
+.store.best { border-color: var(--accent); }
+.seg { border-radius: 999px; border-color: var(--line); }
+.seg button { border-radius: 999px; }
+.tabs { border-top: 0; box-shadow: 0 -4px 16px rgba(84, 60, 20, .06); border-radius: 20px 20px 0 0; }
+.tabs button.on { color: var(--accent); }
+.tabs b { background: var(--cat); color: #fff; }
+.cheapest-bar { border-radius: 16px; }
+.sum-col.win { border-color: var(--accent); }
+dialog { border-radius: 22px; }
+.toast { border-radius: 999px; background: var(--accent); color: var(--accent-ink); }
+.empty { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); margin-top: 14px; }
+.empty::before { content: "🧺"; display: block; font-size: 40px; margin-bottom: 4px; }
+h2 { color: var(--cat); }
+.item.missing { border-inline-start: 5px solid var(--warn); }
