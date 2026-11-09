@@ -17,6 +17,7 @@ import sys
 import time
 from collections import Counter, defaultdict
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from lxml import etree
@@ -42,6 +43,11 @@ CHAIN_NAMES = {
 BARCODE_RE = re.compile(r"^\d{8,14}$")
 DATE_IN_NAME = re.compile(r"-(\d{8})(\d{4,6})?(?:\D|$)|-(\d{8})-(\d{4,6})")
 ONLINE_WORDS = ("אונליין", "משלוח", "online", "אינטרנט", "דיגיטל", "וירטואלי")
+
+
+def now_il() -> datetime:
+    """Current Israel time (naive), so promo dates and timestamps match local time."""
+    return datetime.now(ZoneInfo("Asia/Jerusalem")).replace(tzinfo=None)
 
 
 def local(tag) -> str:
@@ -295,7 +301,7 @@ def latest_per_store(files: list[Path]) -> dict[str, Path]:
 
 def build_chain(chain: str, raw: Path, out: Path, geocoder: Geocoder) -> dict | None:
     """Parse one chain's raw files into out/s/*.json and out/parts/<chain>.json."""
-    now = datetime.now()
+    now = now_il()
     folder = raw / chain
     if not folder.is_dir():
         print(f"[{chain}] no data", flush=True)
@@ -389,7 +395,7 @@ def merge(out: Path) -> None:
     """Combine out/parts/*.json into stores.json, catalog.json and meta.json."""
     catalog: dict[str, list] = {}
     stores: list[dict] = []
-    meta = {"generated": datetime.now().strftime("%Y-%m-%d %H:%M"), "chains": {}}
+    meta = {"generated": now_il().strftime("%Y-%m-%d %H:%M"), "chains": {}}
     for f in sorted((out / "parts").glob("*.json")):
         part = json.loads(f.read_text(encoding="utf-8"))
         stores.extend(part["stores"])

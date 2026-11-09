@@ -2,8 +2,10 @@ name: Update prices and deploy
 
 on:
   schedule:
-    # Every 4 hours (UTC). Chains publish full price files daily and updates hourly.
-    - cron: "20 */4 * * *"
+    # Every 2 hours. A full run takes ~30 minutes; chains republish full
+    # price files a few times a day, so this keeps prices close to live
+    # without hammering their servers.
+    - cron: "20 */2 * * *"
   push:
     branches: [main]
   workflow_dispatch:
