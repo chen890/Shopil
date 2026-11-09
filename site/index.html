@@ -28,6 +28,7 @@
       </div>
       <div id="results" class="results"></div>
 
+      <div id="progress" class="progress" hidden></div>
       <ul id="items" class="items"></ul>
       <div id="emptyList" class="empty">
         <p><b>הרשימה ריקה</b></p>
@@ -73,6 +74,16 @@
       <h2>מועדונים וכרטיסי אשראי</h2>
       <p class="hint">סמנו לאילו מועדונים אתם שייכים ואילו כרטיסי אשראי של הרשתות יש לכם. מבצעי מועדון וכרטיס ייכנסו לחישוב רק אם סימנתם אותם.</p>
       <div id="clubs" class="clubs"></div>
+
+      <h2>כרטיסי הטבות (חבר, ביחד בשבילך)</h2>
+      <p class="hint">הנחות של כרטיסי מועדון חיצוניים לא מופיעות בקבצי המחירים של הרשתות. האחוזים כאן לפי פרסומים ציבוריים, ואפשר לשנות אותם.</p>
+      <div id="cards" class="clubs"></div>
+
+      <h2>קטגוריות</h2>
+      <p class="hint">סדרו את הקטגוריות לפי סדר המחלקות בסופר שלכם, שנו שמות או הוסיפו חדשות. כשמשנים קטגוריה של מוצר, האפליקציה זוכרת אותה.</p>
+      <label class="row"><span>סדר אוטומטי לפי סדר האיסוף שלי בקניות קודמות</span><input type="checkbox" id="autoSort"></label>
+      <ul id="catsList" class="cats-list"></ul>
+      <button id="addCat" class="btn small">+ קטגוריה חדשה</button>
 
       <h2>קנייה אונליין</h2>
       <label class="row">דמי משלוח משוערים (₪)

@@ -21,6 +21,14 @@ function loadState() {
   s.fee = s.fee ?? 30;
   s.mode = s.mode || "all";
   s.radius = s.radius || 5;
+  s.cats ||= null;        // user's category list [{id, label}], seeded from CATEGORIES
+  s.catMap ||= {};        // product code -> category id the user chose (learned)
+  s.catStats ||= {};      // category id -> {sum, n}: average position in past trips
+  s.trip ||= [];          // category ids in the order items were collected this trip
+  s.autoSort ??= true;
+  s.cards ||= {};         // affinity cards the user holds: {hever: true, ...}
+  s.cardPct ||= {};       // user overrides: {"hever:carrefour-city": 6}
+  s.rlMonthly ??= false;  // Rami Levy cashback condition (>= ₪500 / month)
   return s;
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) { /* ignore */ } }
@@ -118,7 +126,10 @@ function addItem(code, qty = 1) {
   const existing = list.items.find((i) => i.c === code);
   const info = catalog?.[code];
   if (existing) existing.q += qty;
-  else list.items.push({ c: code, n: info ? info[0] : code, s: info ? info[2] : "", w: info ? info[3] : 0, q: info?.[3] ? Math.max(qty, 1) : qty });
+  else {
+    const n = info ? info[0] : code;
+    list.items.push({ c: code, n, s: info ? info[2] : "", w: info ? info[3] : 0, q: info?.[3] ? Math.max(qty, 1) : qty, k: categoryOf(code, n) });
+  }
   save(); renderList(); scheduleCompute();
 }
 function setQty(code, q) {
@@ -136,21 +147,184 @@ function renderListsBar() {
     '<button class="chip" data-list="__new">+ רשימה חדשה</button>';
 }
 
+/* ------------------------------------------------------------ categories */
+const CATEGORIES = [
+  ["fruit", "🍎 פירות"], ["veg", "🥕 ירקות"], ["dairy", "🧀 מוצרי חלב וביצים"], ["bakery", "🍞 לחם ומאפים"],
+  ["meat", "🍗 בשר, עוף ודגים"], ["pantry", "🥫 מזווה ובישול"], ["snacks", "🍫 חטיפים וממתקים"], ["drinks", "🥤 משקאות"],
+  ["frozen", "🧊 קפואים"], ["baby", "🍼 תינוקות"], ["cleaning", "🧽 ניקיון ובית"], ["care", "🧴 טיפוח והיגיינה"],
+  ["pets", "🐾 בעלי חיים"], ["other", "🛒 אחר"],
+];
+const FRUIT_KEYS = new Set(["lemon", "avocado", "banana", "apple", "pear", "orange", "clementine", "grapefruit", "grapes",
+  "watermelon", "melon", "peach", "plum", "strawberry", "mango", "kiwi", "pomegranate", "persimmon"]);
+const PROCESSED_CAT = /מרוסק|חתוכ|כבוש|מוחמצ|חמוצ|במלח|בחומץ|מיובש|רסק|רוטב|ממרח|מחית|שימורים|בשמן|מטוגן|ציפס|מיץ|נקטר|ריבה/;
+// [category, regex]; checked against the first word first, then the whole name
+const CAT_RULES = [
+  ["baby", /טיטול|חיתול|האגיס|פמפרס|מטרנה|סימילאק|נוטרילון|תמ"ל|תמל|מוצץ|לתינוק|תינוקות|בייבי|גרבר|דייסת|נוטרישה/],
+  ["pets", /לכלב|לחתול|חול לחתול|פדיגרי|ויסקס|פריסקיז|מזון לחיות/],
+  ["frozen", /קפוא|גלידה|ארטיק|שלגון|קרטיב|מוקפא/],
+  ["cleaning", /אקונומיקה|נוזל כלים|כביסה|מרכך כביסה|ניקוי|מנקה|מטליות|ספוג|שקיות אשפה|שקית אשפה|נייר טואלט|מגבות נייר|מגבת נייר|טישו|ממחטות|נייר סופג|רדיד|ניילון נצמד|תבניות|מפיות|חד פעמי|סבון כלים|מבריק|מסיר אבנית|מטהר|פיירי|סנו |קלין|וניש|טבליות למדיח/],
+  ["care", /שמפו|מרכך שיער|סבון|תחליב|דאודורנט|משחת שיניים|מברשת שיניים|קרם|תחבושות|טמפון|גילוח|ג'ל רחצה|ג׳ל רחצה|קולגייט|אולוויז|ספריי לשיער|מי פה|צמר גפן|פלסטר|מגבונים|קוטקס|לק |בושם/],
+  ["drinks", /^מים|מים מינרל|סודה|קולה|ספרייט|פנטה|שוופס|מיץ|נקטר|משקה|בירה|יין|וודקה|ויסקי|ערק|ליקר|שתייה|פריגת|ספרינג|תפוזינה|נביעות|נסטי|אייס טי|אנרגיה/],
+  ["dairy", /^חלב|^גבינ|^גבינה|קוטג|יוגורט|^לבן|לבנה|שמנת|חמאה|מעדן|^ביצים|ביצי|אשל|^גיל |דנונה|מילקי|פודינג|בולגרית|צפתית|מוצרלה|פרמזן|ריקוטה|טופו|משקה סויה|חלב שקדים|^אקטיביה|יופלה|פרילי/],
+  ["bakery", /^לחם|לחמני|^פיתה|^פיתות|באגט|^חלה|טורטיה|לאפה|קרואסון|^עוגת|^עוגה|מאפה|בורקס|רוגלך|לחמניה|פרוסות|טוסט|קרקר לחם|פריכיות/],
+  ["meat", /^עוף|^בשר|בקר|^הודו|שניצל|קציצ|נקניק|סלמון|^דג|^דגי|פילה|כרעיים|חזה עוף|כבד|המבורגר|קבב|פסטרמה|סלמי|כנפיים|שוקיים|טחון|אמנון|מוסר|לוקוס|בורי|^טונה טרי/],
+  ["snacks", /שוקולד|חטיף|במבה|ביסלי|צ'יפס|צ׳יפס|דוריטוס|עוגיות|עוגיה|וופל|ופל|סוכרי|מסטיק|פופקורן|בייגלה|קרקר|ממתק|תפוצ'יפס|אפרופו|קליק|פסק זמן|כיף כף|מרשמלו|גומי|לקקן|ביסקוויט|חטיפי/],
+  ["pantry", /אורז|פסטה|ספגטי|^קמח|^סוכר|^מלח|^שמן|רוטב|קטשופ|מיונז|חומוס|טחינה|שימורים|טונה|תירס|אפונה|קוסקוס|פתיתים|דגני|קורנפלקס|ריבה|דבש|תבלין|פפריקה|כמון|פלפל שחור|^מרק|אבקת|שקדים|אגוז|^קפה|^תה|קקאו|עדשים|שעועית|ממרח|חומץ|שמרים|אטריות|נודלס|זיתים|מלפפונים חמוצים|רסק|פירורי לחם|גרנולה|שיבולת שועל|קינואה|בורגול|ציר|אבקה|סילאן|נס קפה|נמס/],
+  ["veg", /^(עגבני|מלפפו|חסה|גזר|בצל|שום|פטריות|שמפיניון|תפו"א|תפוח אדמה|תפוחי אדמה|כרוב|ברוקולי|כרובית|פלפל|גמבה|קישוא|חציל|עלי |נענע|פטרוזיליה|כוסברה|שמיר|סלרי|סלק|בטטה|תרד|צנונית|קולורבי|דלעת|ארטישוק|אספרגוס|נבטים|ג'ינג'ר|ג׳ינג׳ר|לוביה|במיה)/],
+  ["fruit", /^(תפוח(?! אדמה)|תפוחי עץ|בננ|תפוז|קלמנטינ|מנדרינ|אבוקדו|לימון|ענב|אבטיח|מלון|תות|אגס|מנגו|קיווי|רימון|אפרסק|נקטרינ|שזיף|אננס|דובדבן|אוכמני|פטל|תמר|אפרסמון|אשכולי|פומלה|ליים|פסיפלורה|פפאיה|ליצ'י)/],
+];
+function categoryOf(code, name) {
+  const learned = state.catMap[code];
+  if (learned && cats().some((c) => c.id === learned)) return learned;
+  if (String(code).startsWith("P:")) return FRUIT_KEYS.has(code.slice(2)) ? "fruit" : "veg";
+  const n = norm(name || "");
+  const first = n.split(" ")[0] || "";
+  for (const [cat, rx] of CAT_RULES) {
+    if ((cat === "veg" || cat === "fruit") && PROCESSED_CAT.test(n)) continue;
+    if (rx.test(first)) return cat;
+  }
+  for (const [cat, rx] of CAT_RULES) {
+    if ((cat === "veg" || cat === "fruit") && PROCESSED_CAT.test(n)) continue;
+    if (rx.test(n)) return cat;
+  }
+  return "other";
+}
+
+/* ------------------------------------------------------------ dynamic categories */
+function cats() {
+  if (!state.cats) state.cats = CATEGORIES.map(([id, label]) => ({ id, label }));
+  return state.cats;
+}
+const catLabel = (id) => cats().find((c) => c.id === id)?.label || "🛒 אחר";
+/** Category order: learned from past trips (auto) or the user's manual order. */
+function orderedCats() {
+  const list = cats().slice();
+  if (!state.autoSort) return list;
+  const known = list.filter((c) => state.catStats[c.id]?.n);
+  if (known.length < 2) return list;
+  const avg = (c) => state.catStats[c.id]?.n ? state.catStats[c.id].sum / state.catStats[c.id].n : null;
+  // categories never collected keep their manual position relative to each other, after learned ones
+  return list
+    .map((c, i) => ({ c, i, a: avg(c) }))
+    .sort((x, y) => (x.a ?? 2 + x.i / 100) - (y.a ?? 2 + y.i / 100))
+    .map((x) => x.c);
+}
+function noteCollected(catId) {
+  if (!state.trip.includes(catId)) state.trip.push(catId);
+}
+/** Fold this trip's aisle order into the learned averages. */
+function commitTrip() {
+  const t = state.trip;
+  if (t.length >= 2) {
+    t.forEach((id, i) => {
+      const st = (state.catStats[id] ||= { sum: 0, n: 0 });
+      st.sum += i / (t.length - 1); st.n += 1;
+    });
+  }
+  state.trip = [];
+}
+
+/* ------------------------------------------------------------ list rendering */
+const STATUS_ORDER = { undefined: 0, missing: 1, done: 2 };
 function renderList() {
   renderListsBar();
   const list = activeList();
   const ul = $("#items");
   $("#emptyList").hidden = list.items.length > 0;
-  $("#countBadge").textContent = list.items.length || "";
-  ul.innerHTML = list.items.map((it) => {
-    const step = it.w ? 0.5 : 1;
-    return `<li class="item" data-code="${it.c}">
+  $("#countBadge").textContent = list.items.filter((i) => i.st !== "done").length || "";
+  const done = list.items.filter((i) => i.st === "done").length;
+  const missing = list.items.filter((i) => i.st === "missing").length;
+  $("#progress").hidden = !(done || missing);
+  $("#progress").innerHTML = `<span>✓ נאספו ${done} מתוך ${list.items.length}${missing ? ` · ${missing} חסרים` : ""}</span>
+    <button class="btn small ghost" id="resetStatus">קנייה חדשה</button>`;
+  const order = orderedCats();
+  const groups = new Map(order.map((c) => [c.id, []]));
+  if (!groups.has("other")) groups.set("other", []);
+  for (const it of list.items) {
+    if (!it.k || !groups.has(it.k)) it.k = categoryOf(it.c, it.n);
+    (groups.get(it.k) || groups.get("other")).push(it);
+  }
+  const shown = order.map((c) => [c.id, c.label]);
+  if (!order.some((c) => c.id === "other")) shown.push(["other", "🛒 אחר"]);
+  ul.innerHTML = shown.filter(([k]) => groups.get(k)?.length).map(([k, label]) => {
+    const items = groups.get(k).slice().sort((a, b) => STATUS_ORDER[a.st] - STATUS_ORDER[b.st]);
+    const left = items.filter((i) => i.st !== "done").length;
+    return `<li class="cat"><h3>${label} <small>${left ? left : "✓"}</small></h3><ul>${items.map((it) => {
+      const step = it.w ? 0.5 : 1;
+      const meta = [it.s || (it.c.startsWith("P:") ? "המחיר הזול לק״ג בכל סניף" : ""), it.note ? `📝 ${it.note}` : ""].filter(Boolean).join(" · ");
+      return `<li class="item ${it.st || ""}" data-code="${esc(it.c)}">
       <div class="row1">
-        <div class="name">${esc(it.n)}<div class="meta">${esc(it.s || (it.c.startsWith("P:") ? "פירות וירקות · המחיר הזול בכל סניף" : ""))}</div></div>
-        <div class="qty"><button data-dq="${-step}" aria-label="הפחתה">−</button><span>${it.q}${it.w ? '<small> ק״ג</small>' : ""}</span><button data-dq="${step}" aria-label="הוספה">+</button></div>
+        <button class="check" data-act="done" aria-label="${it.st === "done" ? "בטל סימון" : "סמן שנאסף"}">${it.st === "done" ? "✓" : ""}</button>
+        <div class="name" data-act="edit">${esc(it.n)}${it.st === "missing" ? ' <span class="badge missing">חסר</span>' : ""}<div class="meta">${esc(meta)}</div></div>
+        <div class="qty"><button data-dq="${-step}" aria-label="הפחתה">−</button><span>${it.q}${it.w ? "<small> ק״ג</small>" : ""}</span><button data-dq="${step}" aria-label="הוספה">+</button></div>
+        <button class="more" data-act="edit" aria-label="עריכה">⋯</button>
       </div></li>`;
+    }).join("")}</ul></li>`;
   }).join("");
   $("#findBtn").hidden = !list.items.length;
+}
+
+function editItem(code) {
+  const it = activeList().items.find((i) => i.c === code);
+  if (!it) return;
+  const step = it.w ? 0.5 : 1;
+  openDialog(`<h2>${esc(it.n)}</h2>
+    <div class="edit-grid">
+      <label>כמות${it.w ? " (ק״ג)" : ""} <input id="eQty" type="number" min="0" step="${step}" value="${it.q}" inputmode="decimal"></label>
+      <label>הערה <input id="eNote" value="${esc(it.note || "")}" placeholder="למשל: הכי בשל, בלי לקטוז"></label>
+      <label>קטגוריה <select id="eCat">${cats().map((c) => `<option value="${c.id}" ${c.id === it.k ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select></label>
+    </div>
+    <div class="status-row">
+      <button class="btn ${it.st === "done" ? "primary" : ""}" data-st="done">✓ נאסף</button>
+      <button class="btn ${it.st === "missing" ? "warn" : ""}" data-st="missing">✗ חסר בחנות</button>
+      <button class="btn ghost" data-st="">ללא סימון</button>
+    </div>
+    <div class="list-actions">
+      <button class="btn primary" id="eSave">שמירה</button>
+      <button class="btn" id="eReplace">🔄 החלפת מוצר</button>
+      <button class="btn ghost" id="eDelete">🗑️ מחיקה</button>
+    </div>`);
+  let st = it.st || "";
+  const dlg = $("#dialog");
+  dlg.querySelectorAll("[data-st]").forEach((b) => (b.onclick = () => {
+    st = b.dataset.st;
+    dlg.querySelectorAll("[data-st]").forEach((x) => x.classList.remove("primary", "warn"));
+    if (st) b.classList.add(st === "done" ? "primary" : "warn");
+  }));
+  $("#eSave").onclick = () => {
+    const q = Number($("#eQty").value);
+    it.note = $("#eNote").value.trim() || undefined;
+    if ($("#eCat").value !== it.k) {
+      it.k = $("#eCat").value;
+      state.catMap[it.c] = it.k; // remember for next time
+    }
+    if (st === "done" && it.st !== "done") noteCollected(it.k);
+    it.st = st || undefined;
+    dlg.close();
+    if (q > 0 && q !== it.q) setQty(code, q); else if (q <= 0) setQty(code, 0); else { save(); renderList(); }
+  };
+  $("#eDelete").onclick = () => { dlg.close(); setQty(code, 0); toast("נמחק מהרשימה"); };
+  $("#eReplace").onclick = () => {
+    dlg.close();
+    replacing = code;
+    showTab("list");
+    const s = $("#search");
+    s.placeholder = `חפשו מוצר במקום: ${it.n}`;
+    s.value = tokens(it.n).slice(0, 2).join(" ");
+    s.focus(); doSearch(s.value);
+  };
+}
+let replacing = null;
+function replaceItem(oldCode, newCode) {
+  const list = activeList();
+  const it = list.items.find((i) => i.c === oldCode);
+  const info = catalog?.[newCode];
+  if (!it || !info) return;
+  const dup = list.items.find((i) => i.c === newCode && i !== it);
+  if (dup) { dup.q += it.q; list.items = list.items.filter((i) => i !== it); }
+  else Object.assign(it, { c: newCode, n: info[0], s: info[2], w: info[3], k: categoryOf(newCode, info[0]), ok: undefined, sub: undefined });
+  save(); renderList(); scheduleCompute();
+  toast("המוצר הוחלף");
 }
 
 /* ------------------------------------------------------------ location */
@@ -185,6 +359,52 @@ function useGPS() {
     () => { $("#locText").textContent = "לא הצלחנו לאתר מיקום. בחרו עיר."; },
     { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
   );
+}
+
+/* ------------------------------------------------------------ affinity cards */
+// Discounts from affinity/credit cards that are NOT in the chains' price files.
+// Defaults from public reports (Nov 2026); the user can edit each percentage.
+const CARDS = [
+  {
+    id: "hever", name: "חבר (כרטיס אשראי חבר)",
+    note: "קרפור: הנחה בקופה. רמי לוי: 5% החזר לכרטיס הנטען בקנייה חודשית מעל ₪500 בכרטיס חבר. שופרסל הפסיקה את ההטבה ב־11/2024.",
+    rules: [
+      { key: "carrefour-city", label: "קרפור סיטי", chain: "carrefour", match: /סיטי|city/i, pct: 6 },
+      { key: "carrefour-market", label: "קרפור מרקט", chain: "carrefour", match: /מרקט|market/i, pct: 7 },
+      { key: "carrefour-online", label: "קרפור אונליין", chain: "carrefour", online: true, pct: 5 },
+      { key: "carrefour-other", label: "קרפור (היפר ואחר)", chain: "carrefour", pct: 0 },
+      { key: "ramilevy", label: "רמי לוי (החזר)", chain: "ramilevy", pct: 5, cashback: true },
+    ],
+  },
+  {
+    id: "beyachad", name: "ביחד בשבילך",
+    note: "לא נמצאה כרגע הנחה פעילה ברשתות המזון. אם יש לכם הטבה, הזינו את האחוז ידנית.",
+    rules: [
+      { key: "shufersal", label: "שופרסל", chain: "shufersal", pct: 0 },
+      { key: "ramilevy", label: "רמי לוי", chain: "ramilevy", pct: 0 },
+      { key: "carrefour", label: "קרפור", chain: "carrefour", pct: 0 },
+      { key: "yohananof", label: "יוחננוף", chain: "yohananof", pct: 0 },
+      { key: "osherad", label: "אושר עד", chain: "osherad", pct: 0 },
+      { key: "tivtaam", label: "טיב טעם", chain: "tivtaam", pct: 0 },
+      { key: "hazihinam", label: "חצי חינם", chain: "hazihinam", pct: 0 },
+    ],
+  },
+];
+const rulePct = (card, rule) => state.cardPct[card.id + ":" + rule.key] ?? rule.pct;
+/** Best affinity-card discount for a store: {pct, label} or null. */
+function cardDiscount(store) {
+  let best = null;
+  for (const card of CARDS) {
+    if (!state.cards[card.id]) continue;
+    const rule = card.rules.find((r) => r.chain === store.chain &&
+      (r.online === undefined ? true : r.online === !!store.online) &&
+      (!r.match || r.match.test(store.name)) );
+    if (!rule) continue;
+    if (rule.cashback && !state.rlMonthly) continue;
+    const pct = rulePct(card, rule);
+    if (pct > 0 && (!best || pct > best.pct)) best = { pct, label: `${pct}% ${rule.cashback ? "החזר" : "הנחת"} ${card.name.split(" ")[0]}` };
+  }
+  return best;
 }
 
 /* ------------------------------------------------------------ pricing */
@@ -432,7 +652,9 @@ async function compute() {
       if (!sub) suggestions.push(...suggestion(data, c.s.chain, it.c, it.q, r));
     }
     const fee = c.s.online ? deliveryFee : 0;
-    ranked.push({ store: c.s, km: c.km, total: total + fee, fee, saved: regular - total, missing, subs, lines, suggestions });
+    const card = cardDiscount(c.s);
+    const cardOff = card ? total * card.pct / 100 : 0;
+    ranked.push({ store: c.s, km: c.km, total: total - cardOff + fee, fee, saved: regular - total, card, cardOff, missing, subs, lines, suggestions });
   });
   // A chain may publish several online stores (by region); keep its cheapest one.
   const seenOnline = new Map();
@@ -478,7 +700,8 @@ function renderCompare() {
       (s.online ? '<span class="badge online">אונליין</span>' : "") +
       (r.subs ? `<span class="badge sub">${r.subs} מוצרים דומים</span>` : "") +
       (r.missing ? `<span class="badge missing">חסרים ${r.missing}</span>` : "") +
-      (r.saved > 0.5 ? `<span class="badge saved">חיסכון ₪${money(r.saved)} במבצעים</span>` : "");
+      (r.saved > 0.5 ? `<span class="badge saved">חיסכון ₪${money(r.saved)} במבצעים</span>` : "") +
+      (r.card ? `<span class="badge saved">כולל ${esc(r.card.label)} (₪${money(r.cardOff)})</span>` : "");
     return `<article class="store ${i === 0 ? "best" : ""}" data-idx="${i}">
       <div class="head"><div class="title">${esc(storeTitle(s))}${badges}</div><div class="total">₪${money(r.total)}</div></div>
       <div class="sub">${esc(where)}${r.km != null ? ` · ${s.approx ? "~" : ""}${r.km.toFixed(1)} ק״מ${s.approx ? " (מיקום משוער)" : ""}` : ""} · ${count - r.missing}/${count} מוצרים${r.fee ? ` · כולל משלוח ₪${money(r.fee)}` : ""}</div>
@@ -530,6 +753,7 @@ function showDetail(i) {
   openDialog(`<h2>${esc(storeTitle(r.store))}</h2>
     <div class="hint">${esc([r.store.address, r.store.city].filter(Boolean).join(", "))}</div>
     <table class="breakdown">${rows}
+      ${r.cardOff ? `<tr><td>${esc(r.card.label)}</td><td class="n">−₪${money(r.cardOff)}</td></tr>` : ""}
       ${r.fee ? `<tr><td>משלוח (משוער)</td><td class="n">₪${money(r.fee)}</td></tr>` : ""}
       <tr><td><b>סה״כ</b></td><td class="n"><b>₪${money(r.total)}</b></td></tr></table>`);
 }
@@ -579,6 +803,25 @@ function renderClubs() {
   }).join("");
   $("#chainsInfo").innerHTML = "רשתות: " + Object.values(meta.chains).map((c) => `${esc(c.name)} (${c.stores} סניפים, עודכן ${esc(c.updated)})`).join(" · ");
 }
+function renderCardsSettings() {
+  $("#cards").innerHTML = CARDS.map((card) => `<div class="club card-box">
+    <label class="card-title"><input type="checkbox" data-card="${card.id}" ${state.cards[card.id] ? "checked" : ""}> <b>${esc(card.name)}</b></label>
+    <div class="hint">${esc(card.note)}</div>
+    ${state.cards[card.id] ? `<div class="card-rules">${card.rules.map((r) => `<label>${esc(r.label)}
+      <span><input type="number" min="0" max="30" step="0.5" data-pct="${card.id}:${r.key}" value="${rulePct(card, r)}" inputmode="decimal">%</span></label>`).join("")}
+      ${card.id === "hever" ? `<label class="rl"><input type="checkbox" id="rlMonthly" ${state.rlMonthly ? "checked" : ""}> אני קונה ברמי לוי מעל ₪500 בחודש בכרטיס חבר (לחישוב ההחזר)</label>` : ""}</div>` : ""}
+  </div>`).join("");
+}
+
+function renderCatsSettings() {
+  $("#autoSort").checked = !!state.autoSort;
+  $("#catsList").innerHTML = cats().map((c, i) => `<li data-id="${esc(c.id)}">
+      <input class="cat-name" value="${esc(c.label)}" aria-label="שם הקטגוריה">
+      <button data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="הזזה למעלה">▲</button>
+      <button data-move="1" ${i === cats().length - 1 ? "disabled" : ""} aria-label="הזזה למטה">▼</button>
+      ${c.id === "other" ? "" : '<button data-del aria-label="מחיקה">✕</button>'}</li>`).join("");
+}
+
 function renderMeta() { $("#updated").textContent = meta ? `מחירים: ${meta.generated}` : ""; }
 
 /* ------------------------------------------------------------ barcode scan */
@@ -672,15 +915,29 @@ function bind() {
   $("#results").addEventListener("click", (e) => {
     const r = e.target.closest(".result[data-code]");
     if (!r) return;
-    addItem(r.dataset.code);
-    toast("נוסף לרשימה");
+    if (replacing) { replaceItem(replacing, r.dataset.code); replacing = null; $("#search").placeholder = "חפשו מוצר, מותג או ברקוד"; }
+    else { addItem(r.dataset.code); toast("נוסף לרשימה"); }
     $("#search").value = ""; $("#results").innerHTML = "";
   });
   $("#items").addEventListener("click", (e) => {
     const li = e.target.closest(".item"); if (!li) return;
     const code = li.dataset.code;
     const it = activeList().items.find((i) => i.c === code);
+    const act = e.target.closest("[data-act]")?.dataset.act;
     if (e.target.dataset.dq) setQty(code, it.q + Number(e.target.dataset.dq));
+    else if (act === "done") {
+      it.st = it.st === "done" ? undefined : "done";
+      if (it.st === "done") noteCollected(it.k);
+      if (activeList().items.every((i) => i.st)) { commitTrip(); toast("סיימתם! סדר המחלקות נלמד לפעם הבאה"); }
+      save(); renderList();
+    }
+    else if (act === "edit") editItem(code);
+  });
+  $("#progress").addEventListener("click", async (e) => {
+    if (e.target.id !== "resetStatus") return;
+    if (!(await ask("להתחיל קנייה חדשה? כל הסימונים (נאסף / חסר) יתאפסו, המוצרים נשארים.", { ok: "התחלה" }))) return;
+    commitTrip();
+    activeList().items.forEach((i) => { delete i.st; }); save(); renderList();
   });
   $("#listsBar").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-list]"); if (!b) return;
@@ -732,6 +989,44 @@ function bind() {
   });
   $("#deliveryFee").value = state.fee;
   $("#deliveryFee").onchange = (e) => { state.fee = Number(e.target.value) || 0; save(); scheduleCompute(); };
+  renderCatsSettings();
+  renderCardsSettings();
+  $("#cards").addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset.card) state.cards[t.dataset.card] = t.checked;
+    else if (t.dataset.pct) state.cardPct[t.dataset.pct] = Math.max(0, Math.min(30, Number(t.value) || 0));
+    else if (t.id === "rlMonthly") state.rlMonthly = t.checked;
+    else return;
+    save(); renderCardsSettings(); scheduleCompute();
+  });
+  $("#autoSort").onchange = (e) => { state.autoSort = e.target.checked; save(); renderList(); };
+  $("#catsList").addEventListener("change", (e) => {
+    if (!e.target.classList.contains("cat-name")) return;
+    const c = cats().find((x) => x.id === e.target.closest("li").dataset.id);
+    if (c && e.target.value.trim()) { c.label = e.target.value.trim(); save(); renderList(); }
+  });
+  $("#catsList").addEventListener("click", async (e) => {
+    const li = e.target.closest("li"); if (!li) return;
+    const list = cats(), i = list.findIndex((x) => x.id === li.dataset.id);
+    if (e.target.dataset.move) {
+      const j = i + Number(e.target.dataset.move);
+      [list[i], list[j]] = [list[j], list[i]];
+      state.autoSort = false; // a manual order means the user wants this order
+    } else if (e.target.hasAttribute("data-del")) {
+      if (!(await ask(`למחוק את הקטגוריה "${list[i].label}"? המוצרים בה יעברו ל"אחר".`, { ok: "מחיקה", danger: true }))) return;
+      const id = list[i].id;
+      list.splice(i, 1);
+      for (const l of state.lists) for (const it of l.items) if (it.k === id) it.k = "other";
+      for (const [code, k] of Object.entries(state.catMap)) if (k === id) delete state.catMap[code];
+    } else return;
+    save(); renderCatsSettings(); renderList();
+  });
+  $("#addCat").onclick = async () => {
+    const name = await ask("שם הקטגוריה החדשה", { input: "", ok: "הוספה" });
+    if (!name) return;
+    cats().splice(Math.max(0, cats().length - 1), 0, { id: "c" + uid(), label: name });
+    save(); renderCatsSettings(); renderList();
+  };
   if ("BarcodeDetector" in window && navigator.mediaDevices) {
     $("#scanBtn").hidden = false; $("#scanBtn").onclick = scanBarcode;
   }

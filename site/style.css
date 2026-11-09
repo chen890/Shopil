@@ -220,3 +220,41 @@ video.scan { width: 100%; border-radius: 12px; }
 .badge.sub { background: var(--accent-soft); color: var(--text); }
 .subtxt { color: var(--accent); font-size: 12px; }
 dialog { max-height: 85vh; overflow-y: auto; }
+
+/* categories and item status */
+.items > .cat { list-style: none; margin: 0 0 6px; }
+.cat h3 { font-size: 15px; margin: 14px 4px 6px; display: flex; justify-content: space-between; color: var(--muted); font-weight: 600; }
+.cat h3 small { font-weight: 400; }
+.cat > ul { list-style: none; margin: 0; padding: 0; }
+.check {
+  width: 30px; height: 30px; flex: none; border-radius: 50%; border: 2px solid var(--muted); background: none;
+  cursor: pointer; color: var(--accent-ink); font-weight: 700; font-size: 16px; padding: 0;
+}
+.item.done .check { background: var(--accent); border-color: var(--accent); }
+.item.done .name { text-decoration: line-through; color: var(--muted); }
+.item.done { opacity: .7; }
+.item.missing { border-inline-start: 4px solid var(--warn); }
+.item .name { cursor: pointer; }
+.more { border: 0; background: none; font-size: 20px; cursor: pointer; color: var(--muted); padding: 0 2px; }
+.progress { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; color: var(--muted); font-size: 14px; }
+.edit-grid { display: grid; gap: 10px; margin: 8px 0; }
+.edit-grid label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.edit-grid input, .edit-grid select { height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); padding: 0 10px; color: var(--text); }
+.status-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.btn.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+
+.cats-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.cats-list li { display: flex; gap: 4px; align-items: center; background: var(--card); border-radius: 10px; padding: 4px 6px; }
+.cats-list .cat-name { flex: 1; min-width: 0; height: 36px; border: 1px solid transparent; background: none; border-radius: 8px; padding: 0 6px; }
+.cats-list .cat-name:focus { border-color: var(--accent); outline: none; }
+.cats-list button { width: 34px; height: 34px; border: 1px solid var(--line); background: none; border-radius: 8px; cursor: pointer; }
+.cats-list button:disabled { opacity: .3; cursor: default; }
+.row input[type=checkbox] { width: 22px; height: 22px; flex: none; }
+
+.card-box { display: block; }
+.card-title { display: flex; gap: 8px; align-items: center; }
+.card-rules { display: grid; gap: 6px; margin-top: 6px; }
+.card-rules > label { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.card-rules input[type=number] { width: 70px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); padding: 0 6px; margin-inline-end: 4px; }
+.card-rules .rl { justify-content: flex-start; gap: 6px; }
+.progress[hidden] { display: none; }

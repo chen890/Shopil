@@ -21,6 +21,8 @@ for f in sorted((out / "parts").glob("*.json")):
             continue
         loc, ok = geocoder.locate(CHAIN_NAMES[part["chain"]], s["name"], s["address"], s["city"])
         s.pop("approx", None)
+        s.pop("lat", None)
+        s.pop("lon", None)
         if loc:
             s["lat"], s["lon"] = loc
             if not ok:

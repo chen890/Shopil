@@ -74,7 +74,8 @@ class Geocoder:
         # Some chains leave the city empty; the store name is often the town.
         clean_name = re.sub(re.escape(chain_name.split()[0]), "", store_name or "").strip(" -")
         clean_name = re.sub(r"\(.*?\)", "", clean_name).strip()
-        if clean_name:
+        # never geocode a placeholder name ("סניף 273"): it matches a random place
+        if clean_name and not re.fullmatch(r"(סניף|branch)?\s*\d+", clean_name):
             queries.append((clean_name, False))
         seen = set()
         for q, precise in queries:
