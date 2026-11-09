@@ -19,7 +19,7 @@ function loadState() {
   if (!s.lists.some((l) => l.id === s.active)) s.active = s.lists[0].id;
   s.clubs = s.clubs || {};
   s.fee = s.fee ?? 30;
-  s.mode = s.mode || "store";
+  s.mode = s.mode || "all";
   s.radius = s.radius || 5;
   return s;
 }
@@ -63,7 +63,7 @@ function loadCatalog() {
   if (!catalogPromise) {
     catalogPromise = getJSON("catalog.json?v=" + encodeURIComponent(meta?.generated || "")).then((c) => {
       catalog = c;
-      catalogIndex = Object.entries(c).map(([code, v]) => [code, norm(v[0] + " " + v[1]), v[4] || 0]);
+      catalogIndex = Object.entries(c).map(([code, v]) => [code, norm(v[0] + " " + v[1] + " " + (v[5] || "")), v[4] || 0]);
       return c;
     });
   }
@@ -118,7 +118,7 @@ function addItem(code, qty = 1) {
   const existing = list.items.find((i) => i.c === code);
   const info = catalog?.[code];
   if (existing) existing.q += qty;
-  else list.items.push({ c: code, n: info ? info[0] : code, s: info ? info[2] : "", w: info ? info[3] : 0, q: qty });
+  else list.items.push({ c: code, n: info ? info[0] : code, s: info ? info[2] : "", w: info ? info[3] : 0, q: info?.[3] ? Math.max(qty, 1) : qty });
   save(); renderList(); scheduleCompute();
 }
 function setQty(code, q) {
@@ -146,8 +146,8 @@ function renderList() {
     const step = it.w ? 0.5 : 1;
     return `<li class="item" data-code="${it.c}">
       <div class="row1">
-        <div class="name">${esc(it.n)}<div class="meta">${esc(it.s || "")}${it.w ? " · לק״ג" : ""}</div></div>
-        <div class="qty"><button data-dq="${-step}" aria-label="הפחתה">−</button><span>${it.q}</span><button data-dq="${step}" aria-label="הוספה">+</button></div>
+        <div class="name">${esc(it.n)}<div class="meta">${esc(it.s || (it.c.startsWith("P:") ? "פירות וירקות · המחיר הזול בכל סניף" : ""))}</div></div>
+        <div class="qty"><button data-dq="${-step}" aria-label="הפחתה">−</button><span>${it.q}${it.w ? '<small> ק״ג</small>' : ""}</span><button data-dq="${step}" aria-label="הוספה">+</button></div>
       </div></li>`;
   }).join("");
   $("#findBtn").hidden = !list.items.length;
@@ -240,21 +240,140 @@ function suggestion(data, chain, code, q, current) {
 }
 
 function candidateStores() {
-  if (state.mode === "online") return stores.filter((s) => s.online).slice(0, 30).map((s) => ({ s, km: null }));
-  if (!state.loc) return [];
-  return stores
-    .filter((s) => !s.online && s.lat != null)
-    .map((s) => ({ s, km: distKm(state.loc, s) }))
-    .filter((x) => x.km <= state.radius)
-    .sort((a, b) => a.km - b.km)
-    .slice(0, MAX_STORES);
+  const out = [];
+  if (state.mode !== "online" && state.loc) {
+    stores
+      .filter((s) => !s.online && s.lat != null)
+      .map((s) => ({ s, km: distKm(state.loc, s) }))
+      .filter((x) => x.km <= state.radius)
+      .sort((a, b) => a.km - b.km)
+      .slice(0, MAX_STORES)
+      .forEach((x) => out.push(x));
+  }
+  if (state.mode !== "store") stores.filter((s) => s.online).forEach((s) => out.push({ s, km: null }));
+  return out;
 }
 
 let computeTimer = null, computeSeq = 0, lastResult = null;
 let compared = false; // prices are shown only after the user asks for the cheapest cart
 function scheduleCompute() { if (!compared) return; clearTimeout(computeTimer); computeTimer = setTimeout(compute, 350); }
 
+/* ------------------------------------------------------------ similar products */
+const STOP = new Set(["גרם", "גר", "ג", "ליטר", "ל", "מל", "מ\"ל", "יח", "יחידות", "קג", "ק\"ג", "של", "עם", "מארז", "אריזה",
+  "בטעם", "במבצע", "חדש", "מבצע", "x", "לק\"ג", "לקג", "פירות", "וירקות"]);
+const tokens = (name) => norm(name).replace(/[()\[\]+*\/,.\-–_]/g, " ").replace(/\d+(\.\d+)?%?/g, " ")
+  .split(" ").filter((w) => w.length > 1 && !STOP.has(w));
+function sizeOf(text) {
+  const m = String(text || "").match(/([\d.]+)\s*(\S+)/);
+  if (!m) return null;
+  let q = parseFloat(m[1]); const u = m[2];
+  if (!q) return null;
+  if (/ליטר/.test(u) && !/מיליליטר/.test(u)) return { q: q * 1000, u: "ml" };
+  if (/מיליליטר|מ"ל/.test(u)) return { q, u: "ml" };
+  if (/קילו|ק"ג/.test(u)) return { q: q * 1000, u: "g" };
+  if (/גרם|גר/.test(u)) return { q, u: "g" };
+  if (/יח/.test(u)) return { q, u: "u" };
+  return null;
+}
+const similarCache = new Map();
+/** Catalog products that look like the same thing (same type words, similar size). */
+function similarCodes(it) {
+  if (similarCache.has(it.c)) return similarCache.get(it.c);
+  const info = catalog?.[it.c];
+  const name = info ? info[0] : it.n;
+  const t = tokens(name);
+  const out = [];
+  if (t.length) {
+    const size = sizeOf(info ? info[2] : it.s) || sizeOf(name);
+    const first = t[0];
+    const tset = new Set(t);
+    for (const [code, text, pop] of catalogIndex) {
+      if (code === it.c || !text.includes(first)) continue;
+      const v = catalog[code];
+      const ct = tokens(v[0]);
+      // same product type: first word matches (generic produce also matches by alias)
+      const sameType = ct[0] === first || (code.startsWith("P:") && text.includes(first));
+      if (!sameType) continue;
+      const inter = ct.filter((w) => tset.has(w)).length;
+      let score = inter / new Set([...t, ...ct]).size;
+      if (code.startsWith("P:")) score += 0.5; // generic produce is the best match for produce
+      const cs = sizeOf(v[2]) || sizeOf(v[0]);
+      if (size && cs && size.u === cs.u) {
+        const r = cs.q / size.q;
+        score += r > 0.8 && r < 1.25 ? 0.2 : -0.4;
+      } else if (size && cs) score -= 0.4;
+      if (score >= 0.35) out.push({ code, score, pop });
+    }
+  }
+  out.sort((a, b) => b.score - a.score || b.pop - a.pop);
+  const res = out.slice(0, 25).map((x) => x.code);
+  similarCache.set(it.c, res);
+  return res;
+}
+
+/** Cheapest similar product available in this store, as a substitute. */
+function substitute(data, chain, it) {
+  let best = null;
+  for (const code of similarCodes(it)) {
+    if (data.p[code] == null) continue;
+    const r = itemCost(data, chain, code, it.q);
+    if (!best || r.cost < best.r.cost) best = { code, r };
+  }
+  return best;
+}
+
+/** Ask "did you mean…?" for items most nearby stores don't carry. Returns true if the list changed. */
+async function resolveRareItems(list, datas) {
+  const live = datas.filter(Boolean);
+  if (!live.length) return false;
+  const rare = list.items.filter((it) => !it.ok && live.filter((d) => d.p[it.c] != null).length < live.length / 2);
+  if (!rare.length) return false;
+  const blocks = rare.map((it, idx) => {
+    const have = live.filter((d) => d.p[it.c] != null).length;
+    const opts = similarCodes(it)
+      .map((code) => {
+        const prices = live.map((d) => d.p[code]).filter((x) => x != null);
+        return { code, n: prices.length, min: prices.length ? Math.min(...prices) : 0 };
+      })
+      .filter((o) => o.n > 0)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 4);
+    const radio = (val, label, checked) =>
+      `<label class="opt"><input type="radio" name="r${idx}" value="${esc(val)}" ${checked ? "checked" : ""}> <span>${label}</span></label>`;
+    return `<div class="resolve"><p><b>${esc(it.n)}</b><br><span class="meta">נמכר רק ב־${have} מתוך ${live.length} החנויות שנבדקו. האם הכוונה ל:</span></p>
+      ${opts.map((o, k) => radio(o.code, `${esc(catalog[o.code][0])} <span class="meta">${esc(catalog[o.code][2] || "")} · ב־${o.n} חנויות · מ־₪${money(o.min)}</span>`, k === 0 && it.c.length < 8)).join("")}
+      ${radio("__auto", 'מוצר דומה בכל חנות שאין בה את המוצר <span class="meta">(מסומן בתוצאות)</span>', !(opts.length && it.c.length < 8))}
+      ${radio("__keep", "להשאיר בדיוק את המוצר הזה", false)}</div>`;
+  });
+  openDialog(`<h2>כמה מוצרים לא נמכרים ברוב החנויות</h2><p class="hint">כדי שהמחיר יהיה מלא בכל חנות, בחרו מה לחפש במקומם.</p>
+    ${blocks.join("")}<div class="list-actions"><button class="btn primary" id="resolveOk">המשך לחישוב</button></div>`);
+  const dlg = $("#dialog");
+  dlg.querySelector("form").hidden = true;
+  await new Promise((resolve) => {
+    $("#resolveOk").onclick = () => {
+      rare.forEach((it, idx) => {
+        const v = dlg.querySelector(`input[name="r${idx}"]:checked`)?.value || "__auto";
+        it.ok = 1;
+        if (v === "__keep") it.sub = 0;
+        else if (v === "__auto") it.sub = 1;
+        else {
+          const info = catalog[v];
+          const dup = list.items.find((x) => x.c === v && x !== it);
+          if (dup) { dup.q += it.q; it.q = 0; }
+          else Object.assign(it, { c: v, n: info[0], s: info[2], w: info[3], sub: 1 });
+        }
+      });
+      list.items = list.items.filter((x) => x.q > 0);
+      save(); renderList(); dlg.close();
+    };
+    dlg.onclose = () => { dlg.onclose = null; rare.forEach((it) => { it.ok = 1; it.sub ??= 1; }); save(); resolve(); };
+  });
+  return true;
+}
+
+let resolving = false;
 async function compute() {
+  if (resolving) return;
   const seq = ++computeSeq;
   const list = activeList();
   const status = $("#compareStatus");
@@ -264,32 +383,51 @@ async function compute() {
   if (!cands.length) {
     lastResult = null;
     status.textContent = state.mode === "online" ? "אין חנויות אונליין בנתונים." :
-      state.loc ? "אין סניפים בטווח שנבחר. נסו להגדיל את המרחק." : "בחרו מיקום כדי למצוא את הסל הזול ביותר.";
+      state.loc ? "אין סניפים בטווח שנבחר. נסו להגדיל את המרחק." : "בחרו מיקום כדי להשוות גם סניפים קרובים.";
     renderCompare(); renderList();
     return;
   }
-  status.textContent = `בודק מחירים ב־${cands.length} סניפים…`;
-  const datas = await Promise.all(cands.map((c) => loadStore(c.s.id)));
+  status.textContent = `בודק מחירים ב־${cands.length} חנויות…`;
+  const [datas] = await Promise.all([Promise.all(cands.map((c) => loadStore(c.s.id))), loadCatalog()]);
   if (seq !== computeSeq) return;
-  const fee = state.mode === "online" ? Number(state.fee) || 0 : 0;
+  resolving = true;
+  try { await resolveRareItems(list, datas); } finally { resolving = false; }
+  if (seq !== computeSeq) return;
+  const deliveryFee = Number(state.fee) || 0;
   const ranked = [];
   cands.forEach((c, i) => {
     const data = datas[i];
     if (!data) return;
-    let total = 0, regular = 0, missing = 0;
+    let total = 0, regular = 0, missing = 0, subs = 0;
     const lines = [], suggestions = [];
     for (const it of list.items) {
-      const r = itemCost(data, c.s.chain, it.c, it.q);
+      let r = itemCost(data, c.s.chain, it.c, it.q), sub = null;
+      if (!r && it.sub !== 0) {
+        const alt = substitute(data, c.s.chain, it);
+        if (alt) { r = alt.r; sub = catalog[alt.code][0]; subs++; }
+      }
       if (!r) { missing++; lines.push({ code: it.c, name: it.n, q: it.q, cost: null }); continue; }
       total += r.cost; regular += r.regular;
-      lines.push({ code: it.c, name: it.n, q: it.q, cost: r.cost, regular: r.regular, deal: r.deal });
-      suggestions.push(...suggestion(data, c.s.chain, it.c, it.q, r));
+      lines.push({ code: it.c, name: it.n, q: it.q, cost: r.cost, regular: r.regular, deal: r.deal, match: sub ? null : data.n?.[it.c], sub });
+      if (!sub) suggestions.push(...suggestion(data, c.s.chain, it.c, it.q, r));
     }
-    ranked.push({ store: c.s, km: c.km, total: total + fee, fee, saved: regular - total, missing, lines, suggestions });
+    const fee = c.s.online ? deliveryFee : 0;
+    ranked.push({ store: c.s, km: c.km, total: total + fee, fee, saved: regular - total, missing, subs, lines, suggestions });
   });
-  ranked.sort((a, b) => a.missing - b.missing || a.total - b.total || (a.km ?? 0) - (b.km ?? 0));
+  // A chain may publish several online stores (by region); keep its cheapest one.
+  const seenOnline = new Map();
+  for (const r of ranked) {
+    if (!r.store.online) continue;
+    const prev = seenOnline.get(r.store.chain);
+    if (!prev || r.missing < prev.missing || (r.missing === prev.missing && r.total < prev.total)) seenOnline.set(r.store.chain, r);
+  }
+  for (let k = ranked.length - 1; k >= 0; k--) {
+    if (ranked[k].store.online && seenOnline.get(ranked[k].store.chain) !== ranked[k]) ranked.splice(k, 1);
+  }
+  ranked.sort((a, b) => a.missing - b.missing || a.total - b.total || a.subs - b.subs || (a.km ?? 0) - (b.km ?? 0));
   lastResult = { listId: list.id, ranked, count: list.items.length };
-  status.textContent = `נבדקו ${ranked.length} סניפים · מחירים מ־${meta.generated}`;
+  const nStore = ranked.filter((r) => !r.store.online).length;
+  status.textContent = `נבדקו ${nStore} סניפים${ranked.length - nStore ? ` ו־${ranked.length - nStore} חנויות אונליין` : ""} · מחירים מ־${meta.generated}`;
   renderCompare(); renderList();
 }
 
@@ -306,20 +444,24 @@ function renderCompare() {
   const box = $("#compare");
   const bar = $("#cheapestBar");
   if (!lastResult || !lastResult.ranked.length) {
+    $("#summary").innerHTML = "";
     box.innerHTML = activeList().items.length ? "" : '<div class="empty"><p>הוסיפו מוצרים לרשימה כדי להשוות.</p></div>';
     bar.hidden = true;
     return;
   }
   const { ranked, count } = lastResult;
+  renderSummary(ranked);
   box.innerHTML = ranked.slice(0, 15).map((r, i) => {
     const s = r.store;
     const where = [s.address, s.city].filter(Boolean).join(", ");
     const badges = (i === 0 ? '<span class="badge best">הכי זול</span>' : "") +
+      (s.online ? '<span class="badge online">אונליין</span>' : "") +
+      (r.subs ? `<span class="badge sub">${r.subs} מוצרים דומים</span>` : "") +
       (r.missing ? `<span class="badge missing">חסרים ${r.missing}</span>` : "") +
       (r.saved > 0.5 ? `<span class="badge saved">חיסכון ₪${money(r.saved)} במבצעים</span>` : "");
     return `<article class="store ${i === 0 ? "best" : ""}" data-idx="${i}">
       <div class="head"><div class="title">${esc(storeTitle(s))}${badges}</div><div class="total">₪${money(r.total)}</div></div>
-      <div class="sub">${esc(where)}${r.km != null ? ` · ${r.km.toFixed(1)} ק״מ` : ""} · ${count - r.missing}/${count} מוצרים${r.fee ? ` · כולל משלוח ₪${money(r.fee)}` : ""}</div>
+      <div class="sub">${esc(where)}${r.km != null ? ` · ${s.approx ? "~" : ""}${r.km.toFixed(1)} ק״מ${s.approx ? " (מיקום משוער)" : ""}` : ""} · ${count - r.missing}/${count} מוצרים${r.fee ? ` · כולל משלוח ₪${money(r.fee)}` : ""}</div>
       ${i === 0 ? tipsHtml(r) : ""}
       <div class="actions">${navLinks(s)}
         <button data-share="${i}">💬 שיתוף בוואטסאפ</button>
@@ -329,6 +471,24 @@ function renderCompare() {
   const b = ranked[0];
   bar.hidden = currentTab === "compare";
   bar.innerHTML = `<span>הכי זול: <b>${esc(storeTitle(b.store))}</b>${b.missing ? ` (חסרים ${b.missing})` : ""}</span><b>₪${money(b.total)}</b>`;
+}
+
+function renderSummary(ranked) {
+  const box = $("#summary");
+  const best = (online) => ranked.find((r) => !!r.store.online === online);
+  const st = best(false), on = best(true);
+  if (!st || !on || state.mode !== "all") { box.innerHTML = ""; return; }
+  const line = (r, label) => `<div class="sum-col ${r === ranked[0] ? "win" : ""}"><div class="sum-label">${label}</div>
+    <div class="sum-total">₪${money(r.total)}</div><div class="sum-store">${esc(storeTitle(r.store))}</div>
+    <div class="sum-note">${r.missing ? `חסרים ${r.missing} · ` : ""}${r.fee ? `כולל משלוח ₪${money(r.fee)}` : r.km != null ? `${r.km.toFixed(1)} ק״מ` : ""}</div></div>`;
+  let verdict;
+  if (st.missing !== on.missing) verdict = st.missing < on.missing ? "בחנות יש יותר מהמוצרים ברשימה" : "באונליין יש יותר מהמוצרים ברשימה";
+  else {
+    const diff = Math.abs(st.total - on.total);
+    verdict = diff < 0.5 ? "המחיר כמעט זהה" : st.total < on.total ? `בחנות זול יותר ב־₪${money(diff)}` : `אונליין זול יותר ב־₪${money(diff)}, כולל משלוח`;
+  }
+  box.innerHTML = `<div class="summary"><div class="sum-cols">${line(st, "🏬 הכי זול בחנות")}${line(on, "🚚 הכי זול אונליין")}</div>
+    <div class="sum-verdict">${verdict}</div></div>`;
 }
 
 function tipsHtml(r) {
@@ -345,7 +505,7 @@ function showDetail(i) {
   const r = lastResult.ranked[i];
   const rows = r.lines.map((l) => l.cost == null
     ? `<tr><td>${esc(l.name)} ×${l.q}</td><td class="n miss">לא נמכר בסניף</td></tr>`
-    : `<tr><td>${esc(l.name)} ×${l.q}${l.deal ? `<div class="dealtxt">🏷️ ${esc(l.deal)}</div>` : ""}</td>
+    : `<tr><td>${esc(l.name)} ×${l.q}${l.match ? `<div class="meta">בסניף: ${esc(l.match)}</div>` : ""}${l.sub ? `<div class="subtxt">↔ מוצר דומה: ${esc(l.sub)}</div>` : ""}${l.deal ? `<div class="dealtxt">🏷️ ${esc(l.deal)}</div>` : ""}</td>
        <td class="n">₪${money(l.cost)}${l.deal ? `<div class="dealtxt"><s>₪${money(l.regular)}</s></div>` : ""}</td></tr>`).join("");
   openDialog(`<h2>${esc(storeTitle(r.store))}</h2>
     <div class="hint">${esc([r.store.address, r.store.city].filter(Boolean).join(", "))}</div>
@@ -381,7 +541,7 @@ function importFromHash() {
   try {
     const json = decodeURIComponent(escape(atob(m[1].replace(/-/g, "+").replace(/_/g, "/"))));
     const p = JSON.parse(json);
-    const list = { id: uid(), name: (p.n || "רשימה משותפת") + " (שותפה)", items: p.i.map(([c, q, n]) => ({ c, q, n })) };
+    const list = { id: uid(), name: (p.n || "רשימה משותפת") + " (שותפה)", items: p.i.map(([c, q, n]) => ({ c, q, n, w: String(c).startsWith("P:") ? 1 : 0 })) };
     state.lists.push(list); state.active = list.id; save();
     toast("הרשימה המשותפת נוספה");
   } catch (_) { toast("קישור הרשימה לא תקין"); }

@@ -23,6 +23,7 @@ from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).parent))
 from geocode import Geocoder  # noqa: E402
+from produce import max_price as produce_max, catalog_entries as produce_catalog, match as produce_match  # noqa: E402
 
 HERE = Path(__file__).parent
 LOCALITIES = json.loads((HERE / "localities.json").read_text(encoding="utf-8"))
@@ -128,15 +129,31 @@ def parse_stores(chain: str, files: list[Path]) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------- prices
-def parse_prices(path: Path, catalog: dict) -> dict[str, float]:
+def parse_prices(path: Path, catalog: dict):
+    """Return (prices, produce).
+
+    prices:  comparable barcode -> price (packaged goods, not sold by weight)
+             plus internal codes of produce items (needed to resolve promos)
+    produce: generic key -> (code, price per kg, name) for the cheapest match
+    """
     prices: dict[str, float] = {}
+    produce: dict[str, tuple[str, float, str]] = {}
     for el in iter_elements(path, {"item", "product"}):
         code = text(el, "itemcode").lstrip("0")
-        if not BARCODE_RE.match(code.zfill(8)) or len(code) < 7:
+        if not code.isdigit():
             continue
         price = num(text(el, "itemprice"))
         if not price or price <= 0 or price > 5000:
             continue
+        name = re.sub(r"\s+", " ", text(el, "itemname"))
+        weighted = text(el, "bisweighted") == "1"
+        if weighted:
+            key = produce_match(name)
+            if key and price <= produce_max(key) and (key not in produce or price < produce[key][1]):
+                produce[key] = (code, round(price, 2), name)
+            continue
+        if len(code) < 8:
+            continue  # chain-internal code, not comparable across chains
         prices[code] = round(price, 2)
         if code not in catalog:
             qty = num(text(el, "quantity")) or 0
@@ -145,12 +162,12 @@ def parse_prices(path: Path, catalog: dict) -> dict[str, float]:
             if qty and unit and unit not in ("לא ידוע", "יחידה"):
                 size = f"{qty:g} {unit}"
             catalog[code] = [
-                re.sub(r"\s+", " ", text(el, "itemname")),
+                name,
                 re.sub(r"\s+", " ", text(el, "manufacturername") or text(el, "manufacturename")),
                 size,
-                1 if text(el, "bisweighted") == "1" else 0,
+                0,
             ]
-    return prices
+    return prices, produce
 
 
 # ---------------------------------------------------------------- promos
@@ -287,12 +304,23 @@ def build_chain(chain: str, raw: Path, out: Path, geocoder: Geocoder) -> dict | 
     written = []
     n_items = n_deals = 0
     for sid, pfile in price_files.items():
-        prices = parse_prices(pfile, catalog)
+        prices, produce = parse_prices(pfile, catalog)
         if not prices:
             continue
+        # promos are resolved against the real item codes, produce included
+        promo_prices = dict(prices)
+        for code, price, _ in produce.values():
+            promo_prices[code] = price
         deals, descs = ({}, [])
         if sid in promo_files:
-            deals, descs = parse_promos(promo_files[sid], prices, now)
+            deals, descs = parse_promos(promo_files[sid], promo_prices, now)
+        names = {}
+        for key, (code, price, name) in produce.items():
+            prices[f"P:{key}"] = price
+            names[f"P:{key}"] = name
+            per_kg = [d for d in deals.pop(code, []) if d[0] == 1]
+            if per_kg:
+                deals[f"P:{key}"] = per_kg
         store = stores.get(sid) or {
             "id": f"{chain}-{sid}", "chain": chain, "name": f"סניף {sid}",
             "address": "", "city": "", "online": False,
@@ -303,6 +331,8 @@ def build_chain(chain: str, raw: Path, out: Path, geocoder: Geocoder) -> dict | 
             popularity[code] += 1
         n_deals += len(deals)
         payload = {"p": prices}
+        if names:
+            payload["n"] = names
         if deals:
             payload["d"] = deals
             payload["t"] = descs
@@ -312,9 +342,11 @@ def build_chain(chain: str, raw: Path, out: Path, geocoder: Geocoder) -> dict | 
         written.append(store)
     for s in written:
         if not s["online"]:
-            loc = geocoder.locate(CHAIN_NAMES[chain], s["name"], s["address"], s["city"])
+            loc, precise = geocoder.locate(CHAIN_NAMES[chain], s["name"], s["address"], s["city"])
             if loc:
                 s["lat"], s["lon"] = loc
+                if not precise:
+                    s["approx"] = 1
     geocoder.save()
     # drop store files of this chain that no longer exist
     ids = {s["id"] for s in written}
@@ -326,7 +358,10 @@ def build_chain(chain: str, raw: Path, out: Path, geocoder: Geocoder) -> dict | 
         "name": CHAIN_NAMES[chain],
         "updated": now.strftime("%Y-%m-%d %H:%M"),
         "stores": written,
-        "catalog": {c: info + [popularity[c]] for c, info in catalog.items()},
+        "catalog": {
+            **{c: info + [popularity[c]] for c, info in catalog.items()},
+            **{c: info[:4] + [popularity[c], info[5]] for c, info in produce_catalog().items() if popularity[c]},
+        },
     }
     (out / "parts" / f"{chain}.json").write_text(
         json.dumps(part, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"

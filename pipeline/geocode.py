@@ -61,23 +61,68 @@ class Geocoder:
         return result
 
     def locate(self, chain_name: str, store_name: str, address: str, city: str):
-        address = re.sub(r",?\s*ישראל\s*$", "", address or "").strip(" ,")
-        address = re.sub(r"\s+", " ", address)
-        queries = []
-        if address and city and city not in address:
-            queries.append(f"{address}, {city}")
-        elif address:
-            queries.append(address)
+        """Return ((lat, lon) | None, precise) where precise=False means city-level."""
+        city = normalize_city(city)
+        queries = []  # (query, precise)
+        for addr in address_variants(address):
+            if city and city not in addr:
+                queries.append((f"{addr}, {city}", True))
+            else:
+                queries.append((addr, bool(re.search(r"\d", addr))))
         if city:
-            queries.append(city)
+            queries.append((city, False))
         # Some chains leave the city empty; the store name is often the town.
-        clean_name = re.sub(chain_name.split()[0], "", store_name or "").strip(" -")
+        clean_name = re.sub(re.escape(chain_name.split()[0]), "", store_name or "").strip(" -")
+        clean_name = re.sub(r"\(.*?\)", "", clean_name).strip()
         if clean_name:
-            queries.append(clean_name)
-        for q in queries:
-            if len(q) < 2:
+            queries.append((clean_name, False))
+        seen = set()
+        for q, precise in queries:
+            if len(q) < 2 or q in seen:
                 continue
+            seen.add(q)
             loc = self._query(q)
             if loc:
-                return loc
-        return None
+                return loc, precise
+        return None, False
+
+
+ABBREVIATIONS = [
+    (r"\bשד(?:'|\.)\s*", "שדרות "),
+    (r"\bשד\s+(?=[א-ת])", "שדרות "),
+    (r"\bרח'?\.\s*", ""),
+    (r"\bרחוב\s+", ""),
+    (r"\bי-ם\b", "ירושלים"),
+    (r"\bככר\b", "כיכר"),
+    (r"\bפ\.ת\b", "פתח תקווה"),
+    (r"\bת\.א\b", "תל אביב"),
+]
+
+
+def normalize_city(city: str) -> str:
+    city = (city or "").strip()
+    city = re.sub(r"\s*-\s*יפו$", "", city)  # "תל אביב - יפו" -> "תל אביב"
+    return city
+
+
+def address_variants(address: str) -> list[str]:
+    a = re.sub(r",?\s*ישראל\s*$", "", address or "").strip(" ,")
+    a = re.sub(r"\(.*?\)", "", a)
+    a = re.sub(r"\s+", " ", a).strip(" ,")
+    if not a or a.lower() in ("unknown", "none"):
+        return []
+    out = [a]
+    b = a
+    for pattern, repl in ABBREVIATIONS:
+        b = re.sub(pattern, repl, b)
+    b = re.sub(r"\s+", " ", b).strip()
+    # "15 דרך ירושלים" -> "דרך ירושלים 15"
+    m = re.match(r"^(\d+[א-ת]?)\s+(.+)$", b)
+    if m:
+        b = f"{m.group(2)} {m.group(1)}"
+    # keep only the first comma part when it looks like "street N, mall name"
+    first = b.split(",")[0].strip()
+    for v in (b, first):
+        if v and v not in out:
+            out.insert(0, v)
+    return out

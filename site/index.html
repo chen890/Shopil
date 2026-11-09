@@ -45,7 +45,8 @@
     <section id="tab-compare" class="tab" aria-label="השוואת מחירים">
       <div class="controls">
         <div class="seg" role="radiogroup" aria-label="סוג קנייה">
-          <button data-mode="store" class="on">בחנות</button>
+          <button data-mode="all" class="on">הכל</button>
+          <button data-mode="store">בחנות</button>
           <button data-mode="online">אונליין</button>
         </div>
         <select id="radius" aria-label="מרחק">
@@ -63,6 +64,7 @@
         <datalist id="cities"></datalist>
       </div>
       <div id="compareStatus" class="status"></div>
+      <div id="summary"></div>
       <div id="compare"></div>
     </section>
 

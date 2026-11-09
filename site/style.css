@@ -197,3 +197,26 @@ dialog::backdrop { background: rgba(0,0,0,.4); }
 dialog form { margin-top: 12px; text-align: left; }
 video.scan { width: 100%; border-radius: 12px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* store vs online summary */
+.summary { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; margin: 8px 0 4px; }
+.sum-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sum-col { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.sum-col.win { border: 2px solid var(--accent); }
+.sum-label { font-size: 13px; color: var(--muted); }
+.sum-total { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sum-store { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sum-note { font-size: 12px; color: var(--muted); }
+.sum-verdict { margin-top: 8px; text-align: center; font-weight: 600; }
+.badge.online { background: var(--accent-soft); color: var(--text); }
+
+/* did-you-mean dialog */
+.resolve { border-top: 1px solid var(--line); padding: 8px 0; }
+.resolve p { margin: 4px 0 6px; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
+.opt:hover { background: var(--accent-soft); }
+.opt input { margin-top: 5px; }
+.meta { color: var(--muted); font-size: 13px; }
+.badge.sub { background: var(--accent-soft); color: var(--text); }
+.subtxt { color: var(--accent); font-size: 12px; }
+dialog { max-height: 85vh; overflow-y: auto; }
