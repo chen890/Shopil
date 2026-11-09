@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Shopil – הסל הכי זול</title>
+  <meta name="description" content="משווים מחירי סופרמרקטים לפי חוק שקיפות המחירים ומוצאים את הסל הזול ביותר לידכם">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="logo" aria-hidden="true">🛒</span> Shopil <small>הסל הכי זול</small></div>
+    <div class="updated" id="updated"></div>
+  </header>
+
+  <main>
+    <!-- ===== List tab ===== -->
+    <section id="tab-list" class="tab active" aria-label="הרשימה שלי">
+      <div class="lists-bar" id="listsBar"></div>
+
+      <div class="search">
+        <input id="search" type="search" placeholder="חפשו מוצר, מותג או ברקוד" autocomplete="off" enterkeyhint="search">
+        <button id="scanBtn" class="icon-btn" title="סריקת ברקוד" hidden>▦</button>
+      </div>
+      <div id="results" class="results"></div>
+
+      <ul id="items" class="items"></ul>
+      <div id="emptyList" class="empty">
+        <p><b>הרשימה ריקה</b></p>
+        <p>חפשו מוצרים למעלה והוסיפו אותם. הרשימה נשמרת אוטומטית במכשיר.</p>
+      </div>
+
+      <button id="findBtn" class="btn primary wide" hidden>💰 מצאו את הסל הכי זול</button>
+      <div class="list-actions">
+        <button id="shareListBtn" class="btn">שיתוף הרשימה בוואטסאפ</button>
+        <button id="clearListBtn" class="btn ghost">ניקוי הרשימה</button>
+      </div>
+    </section>
+
+    <!-- ===== Compare tab ===== -->
+    <section id="tab-compare" class="tab" aria-label="השוואת מחירים">
+      <div class="controls">
+        <div class="seg" role="radiogroup" aria-label="סוג קנייה">
+          <button data-mode="store" class="on">בחנות</button>
+          <button data-mode="online">אונליין</button>
+        </div>
+        <select id="radius" aria-label="מרחק">
+          <option value="2">עד 2 ק״מ</option>
+          <option value="5" selected>עד 5 ק״מ</option>
+          <option value="10">עד 10 ק״מ</option>
+          <option value="20">עד 20 ק״מ</option>
+          <option value="40">עד 40 ק״מ</option>
+        </select>
+      </div>
+      <div class="location" id="locationBox">
+        <span id="locText">מיקום לא נבחר</span>
+        <button id="gpsBtn" class="btn small">📍 המיקום שלי</button>
+        <input id="cityInput" list="cities" placeholder="או בחרו עיר">
+        <datalist id="cities"></datalist>
+      </div>
+      <div id="compareStatus" class="status"></div>
+      <div id="compare"></div>
+    </section>
+
+    <!-- ===== Settings tab ===== -->
+    <section id="tab-settings" class="tab" aria-label="הגדרות">
+      <h2>מועדונים וכרטיסי אשראי</h2>
+      <p class="hint">סמנו לאילו מועדונים אתם שייכים ואילו כרטיסי אשראי של הרשתות יש לכם. מבצעי מועדון וכרטיס ייכנסו לחישוב רק אם סימנתם אותם.</p>
+      <div id="clubs" class="clubs"></div>
+
+      <h2>קנייה אונליין</h2>
+      <label class="row">דמי משלוח משוערים (₪)
+        <input id="deliveryFee" type="number" min="0" step="1" value="30" inputmode="numeric">
+      </label>
+
+      <h2>על הנתונים</h2>
+      <p class="hint">המחירים והמבצעים מגיעים מהקבצים שהרשתות מפרסמות לפי חוק שקיפות המחירים, ומתעדכנים כמה פעמים ביום. ההשוואה היא לפי ברקוד, ולכן פירות וירקות במשקל (קוד פנימי של הרשת) אינם נכללים. מבצעים שתלויים בסכום קנייה כולל או בקופון אינם נכללים. כדאי לוודא את המחיר בקופה.</p>
+      <div id="chainsInfo" class="hint"></div>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="ניווט">
+    <button data-tab="list" class="on"><span aria-hidden="true">📝</span>רשימה <b id="countBadge"></b></button>
+    <button data-tab="compare"><span aria-hidden="true">💰</span>הסל הכי זול</button>
+    <button data-tab="settings"><span aria-hidden="true">⚙️</span>הגדרות</button>
+  </nav>
+
+  <div id="cheapestBar" class="cheapest-bar" hidden></div>
+
+  <dialog id="dialog"><div id="dialogBody"></div><form method="dialog"><button class="btn">סגירה</button></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
