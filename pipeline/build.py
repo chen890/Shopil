@@ -110,6 +110,20 @@ def root_store_id(path: Path) -> str | None:
 
 
 # ---------------------------------------------------------------- stores
+_LOCALITY_NAMES = sorted(
+    {re.sub(r"\s*-\s*יפו$", "", v) for v in LOCALITIES.values() if len(v) >= 4},
+    key=len, reverse=True,
+)
+
+
+def city_from_text(text_: str) -> str:
+    """Find a locality name inside a store name/address (some chains omit the city)."""
+    t = re.sub(r"[\-–,()]", " ", text_ or "")
+    t = f" {re.sub(r'\s+', ' ', t)} "
+    for name in _LOCALITY_NAMES:
+        if f" {name} " in t:
+            return name
+    return ""
 def parse_stores(chain: str, files: list[Path]) -> dict[str, dict]:
     stores: dict[str, dict] = {}
     for path in sorted(files, key=file_stamp):  # newer files override older
@@ -121,6 +135,8 @@ def parse_stores(chain: str, files: list[Path]) -> dict[str, dict]:
             address = text(el, "address")
             city_raw = text(el, "city")
             city = LOCALITIES.get(str(int(city_raw)), "") if city_raw.isdigit() else city_raw
+            if not city:
+                city = city_from_text(name)
             stype = text(el, "storetype")
             online = stype == "2" or any(w in (name + address).lower() for w in ONLINE_WORDS)
             stores[str(int(sid))] = {

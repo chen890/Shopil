@@ -63,29 +63,44 @@ class Geocoder:
     def locate(self, chain_name: str, store_name: str, address: str, city: str):
         """Return ((lat, lon) | None, precise) where precise=False means city-level."""
         city = normalize_city(city)
-        queries = []  # (query, precise)
-        for addr in address_variants(address):
-            if city and city not in addr:
-                queries.append((f"{addr}, {city}", True))
-            else:
-                queries.append((addr, bool(re.search(r"\d", addr))))
-        if city:
-            queries.append((city, False))
-        # Some chains leave the city empty; the store name is often the town.
+        # Some chains leave the city empty; the store name is often the town or area.
         clean_name = re.sub(re.escape(chain_name.split()[0]), "", store_name or "").strip(" -")
         clean_name = re.sub(r"\(.*?\)", "", clean_name).strip()
+        placeholder = bool(re.fullmatch(r"(סניף|branch)?\s*\d+", clean_name or ""))
+        queries = []  # (query, precise)
+        for addr in address_variants(address):
+            if city:
+                queries.append((addr if city in addr else f"{addr}, {city}", True))
+            elif clean_name and not placeholder:
+                # never look up a bare street without a town: "Yehuda HaLevi 113"
+                # exists in many cities. Use the store name as the area hint.
+                queries.append((f"{addr}, {clean_name}", True))
+        if city:
+            queries.append((city, False))
         # never geocode a placeholder name ("סניף 273"): it matches a random place
-        if clean_name and not re.fullmatch(r"(סניף|branch)?\s*\d+", clean_name):
+        if clean_name and not placeholder:
             queries.append((clean_name, False))
+        city_loc = self._query(city) if city else None
         seen = set()
         for q, precise in queries:
             if len(q) < 2 or q in seen:
                 continue
             seen.add(q)
             loc = self._query(q)
-            if loc:
-                return loc, precise
+            if not loc:
+                continue
+            # a street match far from the store's town is a same-name street elsewhere
+            if precise and city_loc and _km(loc, city_loc) > 20:
+                continue
+            return loc, precise
         return None, False
+
+
+def _km(a, b) -> float:
+    import math
+    dlat, dlon = math.radians(b[0] - a[0]), math.radians(b[1] - a[1])
+    h = math.sin(dlat / 2) ** 2 + math.cos(math.radians(a[0])) * math.cos(math.radians(b[0])) * math.sin(dlon / 2) ** 2
+    return 12742 * math.asin(math.sqrt(h))
 
 
 ABBREVIATIONS = [
