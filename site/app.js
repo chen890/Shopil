@@ -327,7 +327,7 @@ function renderCompare() {
     </article>`;
   }).join("");
   const b = ranked[0];
-  bar.hidden = false;
+  bar.hidden = currentTab === "compare";
   bar.innerHTML = `<span>הכי זול: <b>${esc(storeTitle(b.store))}</b>${b.missing ? ` (חסרים ${b.missing})` : ""}</span><b>₪${money(b.total)}</b>`;
 }
 
@@ -450,7 +450,11 @@ function toast(msg) {
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2500);
 }
+let currentTab = "list";
 function showTab(name) {
+  currentTab = name;
+  if (name === "compare") $("#cheapestBar").hidden = true;
+  else if (lastResult?.ranked?.length) $("#cheapestBar").hidden = false;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + name));
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   window.scrollTo(0, 0);

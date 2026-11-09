@@ -36,7 +36,7 @@ html, body { margin: 0; }
 body {
   background: var(--bg); color: var(--text);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Rubik, Arial, sans-serif;
-  padding-bottom: calc(132px + env(safe-area-inset-bottom));
+  padding-bottom: calc(150px + env(safe-area-inset-bottom));
   overflow-x: hidden;
 }
 button, input, select { font: inherit; color: inherit; }
@@ -162,8 +162,13 @@ select, .location input, .row input {
 .row input { width: 90px; }
 
 /* bottom */
+.bottom {
+  position: fixed; bottom: 0; inset-inline: 0; z-index: 10;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.bottom > * { pointer-events: auto; }
 .tabs {
-  position: fixed; bottom: 0; inset-inline: 0; z-index: 10; display: flex; background: var(--card);
+  display: flex; background: var(--card);
   border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
 }
 .tabs button {
@@ -175,10 +180,12 @@ select, .location input, .row input {
 .tabs b { background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-size: 11px; padding: 0 6px; }
 .tabs b:empty { display: none; }
 .cheapest-bar {
-  position: fixed; inset-inline: 12px; bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 9; max-width: 656px; margin: 0 auto;
+  margin: 0 12px; width: calc(100% - 24px); max-width: 656px; align-self: center;
   background: var(--accent); color: var(--accent-ink); border-radius: 12px; padding: 10px 14px; cursor: pointer;
-  display: flex; justify-content: space-between; gap: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.18);
 }
+.cheapest-bar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cheapest-bar > b { white-space: nowrap; font-size: 18px; }
 .cheapest-bar[hidden] { display: none; }
 .toast {
   position: fixed; bottom: calc(130px + env(safe-area-inset-bottom)); inset-inline: 0; margin: 0 auto; width: max-content; max-width: 90vw;
