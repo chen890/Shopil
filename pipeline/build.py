@@ -189,7 +189,10 @@ def parse_dt(value: str):
 
 
 def parse_promos(path: Path, prices: dict[str, float], now: datetime):
-    """Return {barcode: [[minQty, totalPriceForMinQty, club, descIndex]]}, descs."""
+    """Return {barcode: [[minQty, totalPriceForMinQty, club, descIndex, maxUnits?]]}, descs.
+
+    maxUnits (optional) caps how many units get the deal price ("מוגבל ל־3").
+    """
     deals: dict[str, list] = defaultdict(list)
     descs: list[str] = []
     desc_idx: dict[str, int] = {}
@@ -212,6 +215,9 @@ def parse_promos(path: Path, prices: dict[str, float], now: datetime):
         if min_amount and min_amount > 0:
             continue  # depends on whole-basket total
         desc = re.sub(r"\s+", " ", text(promo, "promotiondescription"))[:80]
+        redemption = num(text(promo, "redemptionlimit"))
+        m = re.search(r"מוגבל\s*ל[־-]?\s*(\d+)", desc)
+        desc_limit = float(m.group(1)) if m else None
 
         promo_qty = num(text(promo, "minqty"))
         promo_price = num(text(promo, "discountedprice"))
@@ -253,7 +259,15 @@ def parse_promos(path: Path, prices: dict[str, float], now: datetime):
             if desc not in desc_idx:
                 desc_idx[desc] = len(descs)
                 descs.append(desc)
-            deals[code].append([qty, round(total, 2), club, desc_idx[desc]])
+            max_qty = num(text(item, "maxqty"))
+            limit = None
+            for cand in (max_qty, redemption * qty if redemption else None, desc_limit):
+                if cand and cand > 0 and (limit is None or cand < limit):
+                    limit = cand
+            deal = [qty, round(total, 2), club, desc_idx[desc]]
+            if limit and limit < 1000:
+                deal.append(limit)
+            deals[code].append(deal)
     # keep the best deal per (qty, club)
     out = {}
     for code, lst in deals.items():

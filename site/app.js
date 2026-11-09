@@ -194,23 +194,36 @@ function eligible(chain, club) {
   return club === 1 ? !!c.club : club === 2 ? !!c.card : false;
 }
 
-/** Cost of q units of `code` at a store, using the best eligible deal. */
+/** Cost of q units of `code` at a store, using the best eligible deal.
+ *  Deal: [minQty, totalForMinQty, club, descIdx, maxUnits?]. */
 function itemCost(data, chain, code, q) {
   const p = data.p[code];
   if (p == null) return null;
   const deals = (data.d?.[code] || []).filter((d) => eligible(chain, d[2]));
-  let unit = p, unitDeal = null;
-  for (const d of deals) if (d[0] === 1 && d[1] < unit) { unit = d[1]; unitDeal = d; }
-  let best = { cost: q * unit, deal: unitDeal };
+  // single-unit price deals, possibly limited ("מוגבל ל־3")
+  const unitCost = (n) => {
+    let best = { cost: n * p, deal: null };
+    for (const d of deals) {
+      if (d[0] !== 1 || d[1] >= p) continue;
+      const lim = d[4] ?? Infinity;
+      const cost = Math.min(n, lim) * d[1] + Math.max(0, n - lim) * p;
+      if (cost < best.cost - 0.001) best = { cost, deal: d };
+    }
+    return best;
+  };
+  let best = unitCost(q);
   if (Number.isInteger(q)) {
     for (const d of deals) {
       if (d[0] <= 1) continue;
-      const k = Math.floor(q / d[0]);
+      const kMax = d[4] ? Math.floor(d[4] / d[0]) : Infinity;
+      const k = Math.min(Math.floor(q / d[0]), kMax);
       if (!k) continue;
-      const cost = k * d[1] + (q - k * d[0]) * unit;
+      const rest = unitCost(q - k * d[0]);
+      const cost = k * d[1] + rest.cost;
       if (cost < best.cost - 0.001) best = { cost, deal: d };
     }
   }
+  const unit = q > 0 ? unitCost(1).cost : p;
   return { cost: best.cost, regular: q * p, deal: best.deal ? data.t[best.deal[3]] : null, unit, deals };
 }
 
@@ -275,7 +288,8 @@ function sizeOf(text) {
   if (/יח/.test(u)) return { q, u: "u" };
   return null;
 }
-const similarCache = new Map();
+const similarCache = new Map(), similarScore = new Map();
+const PROCESSED = /מרוסק|קוביות|חתוכ|קצוצ|כבוש|מוחמצ|חמוצ|במלח|בחומץ|מיובש|רסק|רוטב|ממרח|מחית|קפוא|שימורים|בשמן|מבושל|קלוי|מטוגן|ציפס|מיץ|נקטר|סלט|ממולא|קורנישונ/;
 /** Catalog products that look like the same thing (same type words, similar size). */
 function similarCodes(it) {
   if (similarCache.has(it.c)) return similarCache.get(it.c);
@@ -287,6 +301,7 @@ function similarCodes(it) {
     const size = sizeOf(info ? info[2] : it.s) || sizeOf(name);
     const first = t[0];
     const tset = new Set(t);
+    const processed = PROCESSED.test(norm(name));
     for (const [code, text, pop] of catalogIndex) {
       if (code === it.c || !text.includes(first)) continue;
       const v = catalog[code];
@@ -302,11 +317,13 @@ function similarCodes(it) {
         const r = cs.q / size.q;
         score += r > 0.8 && r < 1.25 ? 0.2 : -0.4;
       } else if (size && cs) score -= 0.4;
+      if (!processed && PROCESSED.test(text)) score -= 0.6; // fresh ≠ crushed / pickled
       if (score >= 0.35) out.push({ code, score, pop });
     }
   }
   out.sort((a, b) => b.score - a.score || b.pop - a.pop);
   const res = out.slice(0, 25).map((x) => x.code);
+  for (const x of out.slice(0, 25)) similarScore.set(it.c + ">" + x.code, x.score);
   similarCache.set(it.c, res);
   return res;
 }
@@ -336,13 +353,16 @@ async function resolveRareItems(list, datas) {
         return { code, n: prices.length, min: prices.length ? Math.min(...prices) : 0 };
       })
       .filter((o) => o.n > 0)
-      .sort((a, b) => b.n - a.n)
+      .map((o) => ({ ...o, score: similarScore.get(it.c + ">" + o.code) || 0 }))
+      .sort((a, b) => b.score - a.score || b.n - a.n)
       .slice(0, 4);
+    // pre-select a suggestion only when it is clearly the same thing
+    const strong = opts.length && (opts[0].code.startsWith("P:") || opts[0].score >= 0.8) && opts[0].n >= live.length / 2;
     const radio = (val, label, checked) =>
       `<label class="opt"><input type="radio" name="r${idx}" value="${esc(val)}" ${checked ? "checked" : ""}> <span>${label}</span></label>`;
     return `<div class="resolve"><p><b>${esc(it.n)}</b><br><span class="meta">נמכר רק ב־${have} מתוך ${live.length} החנויות שנבדקו. האם הכוונה ל:</span></p>
-      ${opts.map((o, k) => radio(o.code, `${esc(catalog[o.code][0])} <span class="meta">${esc(catalog[o.code][2] || "")} · ב־${o.n} חנויות · מ־₪${money(o.min)}</span>`, k === 0 && it.c.length < 8)).join("")}
-      ${radio("__auto", 'מוצר דומה בכל חנות שאין בה את המוצר <span class="meta">(מסומן בתוצאות)</span>', !(opts.length && it.c.length < 8))}
+      ${opts.map((o, k) => radio(o.code, `${esc(catalog[o.code][0])} <span class="meta">${esc(catalog[o.code][2] || "")} · ב־${o.n} חנויות · מ־₪${money(o.min)}</span>`, k === 0 && strong)).join("")}
+      ${radio("__auto", 'מוצר דומה בכל חנות שאין בה את המוצר <span class="meta">(מסומן בתוצאות)</span>', !strong)}
       ${radio("__keep", "להשאיר בדיוק את המוצר הזה", false)}</div>`;
   });
   openDialog(`<h2>כמה מוצרים לא נמכרים ברוב החנויות</h2><p class="hint">כדי שהמחיר יהיה מלא בכל חנות, בחרו מה לחפש במקומם.</p>
