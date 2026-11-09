@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.shopil.il-upload</string>
+  <!-- Every 2 hours: fetch Hazi Hinam (blocks servers outside Israel) and upload to GitHub. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>D="$HOME/Shopil"; S="$D/app/scripts/il_upload.sh"; [ -x "$S" ] || S="$D/scripts/il_upload.sh"; exec "$S" &gt;&gt; "$D/il-upload.log" 2&gt;&amp;1</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>7200</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+</dict>
+</plist>
