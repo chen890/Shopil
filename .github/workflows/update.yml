@@ -41,7 +41,9 @@ jobs:
         env:
           PREVIOUS_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           RAW_DIR: ${{ runner.temp }}/raw
-        run: python pipeline/run_all.py site/data
+        # Carrefour and Hazi Hinam block requests from outside Israel, so the
+        # cloud runner skips them (run them locally: run_all.py site/data carrefour hazihinam).
+        run: python pipeline/run_all.py site/data shufersal ramilevy yohananof osherad tivtaam
 
       - name: Save new geocoding results
         run: |
