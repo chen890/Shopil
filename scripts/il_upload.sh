@@ -14,9 +14,15 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "== $(date '+%F %T') il_upload: ${CHAINS[*]}"
-if [ ! -x .venv/bin/python ]; then
-  python3 -m venv .venv
-  .venv/bin/pip install -q -r pipeline/requirements.txt
+# (Re)create the Python environment if it's missing or broken
+if ! .venv/bin/python -c "import lxml, il_supermarket_scarper, requests" 2>/dev/null; then
+  echo "setting up .venv"
+  rm -rf .venv
+  if command -v uv >/dev/null; then
+    uv venv -q --python 3.12 .venv && uv pip install -q --python .venv/bin/python -r pipeline/requirements.txt
+  else
+    python3 -m venv .venv && .venv/bin/pip install -q -r pipeline/requirements.txt
+  fi
 fi
 
 # Build only these chains into a fresh output folder
