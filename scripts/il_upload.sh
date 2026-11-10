@@ -32,7 +32,8 @@ ok=0
 for chain in "${CHAINS[@]}"; do
   part="$WORK/out/parts/$chain.json"
   if [ ! -s "$part" ]; then echo "[$chain] no data built, skipping upload"; continue; fi
-  (cd "$WORK/out" && tar -czf "$WORK/$chain.tar.gz" "parts/$chain.json" s/"$chain"-*.json)
+  # COPYFILE_DISABLE / --no-xattrs: no macOS "._*" metadata files in the archive
+  (cd "$WORK/out" && COPYFILE_DISABLE=1 tar --no-xattrs -czf "$WORK/$chain.tar.gz" "parts/$chain.json" s/"$chain"-*.json)
   gh release view il-data -R "$REPO" >/dev/null 2>&1 || \
     gh release create il-data -R "$REPO" --title "Israel-only chain data" \
       --notes "Uploaded from a Mac in Israel by scripts/il_upload.sh. Used by the cloud build." --latest=false

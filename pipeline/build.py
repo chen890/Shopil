@@ -362,6 +362,7 @@ def build_chain(chain: str, raw: Path, out: Path, geocoder: Geocoder) -> dict | 
             "address": "", "city": "", "online": False,
         }
         store["items"] = len(prices)
+        store["updated"] = now.strftime("%Y-%m-%d %H:%M")
         n_items += len(prices)
         for code in prices:
             popularity[code] += 1
@@ -413,6 +414,8 @@ def merge(out: Path) -> None:
     stores: list[dict] = []
     meta = {"generated": now_il().strftime("%Y-%m-%d %H:%M"), "chains": {}}
     for f in sorted((out / "parts").glob("*.json")):
+        if f.name.startswith("."):
+            continue  # e.g. macOS "._x.json" metadata files
         part = json.loads(f.read_text(encoding="utf-8"))
         stores.extend(part["stores"])
         for code, info in part["catalog"].items():

@@ -13,10 +13,11 @@ import os
 import shutil
 import sys
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from build import CHAIN_NAMES, HERE, build_chain, merge  # noqa: E402
+from build import CHAIN_NAMES, HERE, build_chain, merge, now_il  # noqa: E402
 from fetch import CHAINS, fetch_chain  # noqa: E402
 from geocode import Geocoder  # noqa: E402
 
@@ -53,6 +54,43 @@ def restore_previous(chain: str, out: Path) -> bool:
     return bool(ok)
 
 
+def carry_over_missing(chain: str, out: Path, max_age_hours: int = 72) -> int:
+    """Chains publish store files gradually; keep recent data of stores this run missed."""
+    base = os.environ.get("PREVIOUS_URL", "").rstrip("/")
+    path = out / "parts" / f"{chain}.json"
+    if not base or not path.exists():
+        return 0
+    try:
+        prev = json.loads(get(f"{base}/data/parts/{chain}.json"))
+    except Exception:  # noqa: BLE001
+        return 0
+    part = json.loads(path.read_text(encoding="utf-8"))
+    have = {s["id"] for s in part["stores"]}
+    now = now_il()
+    added = 0
+    for store in prev.get("stores", []):
+        if store["id"] in have:
+            continue
+        stamp = store.get("updated") or prev.get("updated")
+        try:
+            age = (now - datetime.strptime(stamp, "%Y-%m-%d %H:%M")).total_seconds() / 3600
+        except (TypeError, ValueError):
+            continue
+        if age > max_age_hours:
+            continue
+        try:
+            (out / "s" / f"{store['id']}.json").write_bytes(get(f"{base}/data/s/{store['id']}.json"))
+        except Exception:  # noqa: BLE001
+            continue
+        store.setdefault("updated", stamp)
+        part["stores"].append(store)
+        added += 1
+    if added:
+        path.write_text(json.dumps(part, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(f"[{chain}] kept previous data for {added} stores not published yet", flush=True)
+    return added
+
+
 def main() -> None:
     out = Path(sys.argv[1])
     chains = sys.argv[2:] or list(CHAIN_NAMES)
@@ -67,6 +105,8 @@ def main() -> None:
         if part is None or len(part["stores"]) == 0:
             failed.append(chain)
             restore_previous(chain, out)
+        else:
+            carry_over_missing(chain, out)
     merge(out)
     if failed:
         print("chains that failed this run:", ", ".join(failed))
